@@ -99,6 +99,34 @@ def _float_env(name: str, default: float) -> float:
 # end def
 
 
+def candidate_settings(
+    api_key: str,
+    org_id: str,
+    sender_email: str,
+    sender_name: str | None = None,
+    base_url: str | None = None,
+    base: Settings | None = None,
+) -> Settings:
+    """Build settings for a specific set of credentials, for verification.
+
+    Used before persisting anything, so the values under test are exactly the
+    ones the caller supplied rather than whatever the environment currently
+    resolves to. Shared by the ``configure`` CLI and the MCP tool so the two
+    cannot drift.
+    """
+    from dataclasses import replace
+
+    return replace(
+        base or load_settings(),
+        api_key=api_key,
+        org_id=org_id,
+        sender_email=sender_email,
+        sender_name=sender_name,
+        base_url=base_url or credentials.DEFAULT_BASE_URL,
+    )
+# end def
+
+
 def load_settings() -> Settings:
     """Resolve settings from the environment and the credential store."""
     values: dict[str, str | None] = {}

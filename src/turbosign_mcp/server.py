@@ -137,14 +137,24 @@ def _selftest() -> int:
 
 
 def main() -> None:
-    """Run the MCP server over stdio, or self-test and exit."""
-    if "--selftest" in sys.argv:
+    """Run the MCP server over stdio, or handle a subcommand and exit."""
+    argv = sys.argv[1:]
+
+    if argv and argv[0] == "configure":
+        # Terminal-driven credential entry: the key never enters an agent's
+        # context or a conversation transcript. See cli.py.
+        from .cli import run_configure
+
+        raise SystemExit(run_configure(argv[1:]))
+    # end if
+    if "--selftest" in argv:
         raise SystemExit(_selftest())
     # end if
-    if "--version" in sys.argv:
+    if "--version" in argv:
         print(__version__)
         raise SystemExit(0)
     # end if
+
     mcp.run()
     return
 # end def

@@ -4,6 +4,30 @@ What changed, for the person using this — not the person reading git history.
 
 ## Unreleased
 
+**A way to save your API key without it entering the conversation.**
+
+```bash
+turbosign-mcp configure
+```
+
+Prompts for the key with the echo off, checks it against the live API, and
+writes it owner-only to `~/.turbosign-mcp/credentials.json`. Only a masked
+fingerprint is ever printed. The MCP tool `turbosign_configure` still works and
+is more convenient, but anything passed to it travels through the agent's
+context and is written to that conversation's transcript on disk — fine for a
+scoped key on a test account, not fine for a long-lived one.
+
+There is no `--api-key` flag, on purpose: a secret on a command line lands in
+your shell history and is visible to every other user on the machine through
+`ps`. Passing one is refused with an explanation. Automated provisioning can
+use `--api-key-file` instead, with `--org-id` and `--sender-email` to skip the
+prompts.
+
+If an environment variable is shadowing the key you just stored, it says so —
+environment still wins, and a stored key that is being overridden looks
+configured without being the one in use.
+
+
 **There is no TurboSign sandbox, and the server now says so.** TurboSign runs
 one environment: production. Every send reaches a real inbox and can only be
 voided, never recalled. The server's built-in instructions now carry a

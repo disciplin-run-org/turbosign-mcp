@@ -54,6 +54,22 @@ document — and a bad key should get 401 before the lookup happens.
 **Why it is uncertain.** Undocumented. Some APIs return 404 for unauthorised
 requests deliberately, to avoid confirming that a resource exists.
 
+**Half of this is now confirmed** (2026-08-01, live against
+`api.turbodocx.com`): an invalid key returns **401 Unauthorized**, not 404.
+
+```
+$ turbosign-mcp configure --api-key-file ... --org-id test-org --sender-email ...
+Verifying against TurboSign...
+error: those credentials were not accepted. TurboSign rejected the
+credentials (401). TurboSign said: Unauthorized
+  Nothing has been saved.
+```
+
+So the API does distinguish auth failure from a missing resource, and the
+reject path works. What remains is the other half: that a **valid** key asking
+for a nonexistent document gets 404 rather than something else. That needs a
+working key.
+
 **How to settle it.** With working credentials in place:
 
 ```

@@ -13,7 +13,7 @@ from fastmcp import Context, FastMCP
 
 from .. import credentials
 from ..api import TurboSignClient
-from ..config import load_settings
+from ..config import candidate_settings, load_settings
 from ..errors import TurboSignError
 
 
@@ -126,6 +126,15 @@ def register_tools(mcp: FastMCP) -> None:
         name on the API key. base_url is only for a non-production endpoint.
 
         The key is never echoed back — only a masked fingerprint.
+
+        PRIVACY: whatever you pass here travels through this conversation and
+        is written to its transcript on disk. For a scoped key on a test
+        account that is usually fine. For a long-lived key, or a session token
+        that can do everything the user can, tell the human to run this in
+        their own terminal instead — same verification, same store, and the
+        key never enters the conversation:
+
+            turbosign-mcp configure
         """
         pending = {
             "api_key": api_key.strip(),
@@ -151,17 +160,12 @@ def register_tools(mcp: FastMCP) -> None:
         # Verify against the live API using exactly these values, not the
         # resolved ones — writing a key that does not work is the failure this
         # tool exists to prevent.
-        settings = load_settings()
-        candidate = type(settings)(
+        candidate = candidate_settings(
             api_key=pending["api_key"],
             org_id=pending["org_id"],
             sender_email=pending["sender_email"],
             sender_name=pending.get("sender_name"),
-            base_url=pending.get("base_url") or credentials.DEFAULT_BASE_URL,
-            sources=settings.sources,
-            allowed_dirs=settings.allowed_dirs,
-            max_file_bytes=settings.max_file_bytes,
-            timeout=settings.timeout,
+            base_url=pending.get("base_url"),
         )
 
         try:

@@ -49,22 +49,45 @@ resolve relative commands from the project directory.
 
 ## Getting credentialled
 
-You do not need to edit a config file. Ask the agent to run setup:
+Ask the agent where to start:
 
 ```
 > turbosign_setup()
 ```
 
-It reports what is missing, gives you the URL to create a TurboDocx account and
-the navigation to the API key, and then:
+It reports what is missing and gives you the URL to create a TurboDocx account
+and the navigation to the API key. Then save the key one of two ways.
+
+**From a terminal — the key never enters the conversation:**
+
+```bash
+.venv/bin/turbosign-mcp configure
+```
+
+Prompts for the key with the echo off, verifies it against the live API, and
+writes it owner-only to `~/.turbosign-mcp/credentials.json`. Nothing is printed
+but a masked fingerprint. Use this for any key you would mind seeing in a log.
+
+There is deliberately **no `--api-key` flag**: a secret on a command line is
+recorded in your shell history and is visible to every other user on the
+machine via `ps`. Passing one is refused with an explanation rather than
+silently ignored. For automated provisioning use `--api-key-file`, and
+`--org-id` / `--sender-email` to skip the prompts.
+
+**Or through the agent, if convenience wins:**
 
 ```
 > turbosign_configure(api_key="...", org_id="...", sender_email="you@example.com")
 ```
 
-The credentials are **checked against the live API before they are saved**, so a
-mistyped key fails during setup rather than on your first real send. They are
-stored owner-only in `~/.turbosign-mcp/credentials.json`.
+Same verification, same store. The trade-off is that the key travels through
+the agent's context and lands in that conversation's transcript on disk — fine
+for a scoped key on a test account, not fine for a long-lived one or for a
+session token that can do everything your user can.
+
+Either way the credentials are **checked against the live API before they are
+saved**, so a mistyped key fails at setup rather than on your first real send.
+The server re-reads the store on every call, so there is nothing to restart.
 
 `turbosign_whoami()` shows which account a machine is sending as — worth having
 when the server is installed on several machines with different accounts.

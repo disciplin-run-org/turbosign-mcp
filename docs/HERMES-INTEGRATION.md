@@ -187,11 +187,25 @@ says so.
 No Hermes change, but the key lands in `env_passthrough`.
 
 **A third option, if you prefer no Hermes change at all:** leave the keys out of
-both files and let the agent run `turbosign_setup()` / `turbosign_configure()`
-once per box. The credentials then live in `~/.turbosign-mcp/credentials.json`
-(0600) and never touch `config.yaml` or `.env`. The cost is that the key passes
-through the agent's context during setup, and that a rebuild loses it unless
-that path is in the state backup. Your call — the server supports all three.
+both files and credential each box from its own terminal:
+
+```bash
+~/.hermes-mcp/turbosign/bin/turbosign-mcp configure
+```
+
+Hidden prompt, verified against the live API, written to
+`~/.turbosign-mcp/credentials.json` (0600). The key never touches `config.yaml`,
+never touches `.env`, and never passes through the agent's context — which
+makes this the tightest of the three on credential exposure, at the cost of a
+manual step per box. For unattended provisioning the same command takes
+`--api-key-file` plus `--org-id` / `--sender-email`, so a step script can do it
+from a root-owned file that is shredded afterwards.
+
+Note the rebuild cost: `~/.turbosign-mcp/` must be in the state backup
+(`vps/state.sh`) or a rebuild loses the credentials. The `${env:}` route in
+section 5 survives a rebuild for free, because it re-renders from the vault.
+Your call — the server supports all three, and environment always wins over the
+store, so they compose safely.
 
 ## 6. The approval gate
 
