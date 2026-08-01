@@ -1,0 +1,29 @@
+# Credentials — this repo is public. Nothing key-shaped may ever be committed.
+credentials.json
+.env
+*.pem
+*.key
+
+# Signed documents and anything fetched from the API at runtime.
+downloads/
+*.signed.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.gstack/
+
+# Editors and per-developer agent settings
+.idea/
+.vscode/
+.claude/settings.local.json

@@ -1,0 +1,177 @@
+# turbosign-mcp
+
+Send PDFs out for signature by asking for it.
+
+```
+> send ~/contracts/nda.pdf to Bob Smith <bob@example.com> for signature
+```
+
+A thin [MCP](https://modelcontextprotocol.io) server over the
+[TurboSign](https://docs.turbodocx.com/docs/TurboSign/API%20Signatures/)
+e-signature API. It speaks **stdio**, so any MCP client can launch it — Claude
+Code, Hermes Agent, anything else — with no container, no port, and no daemon.
+
+## What it does
+
+| Tool | |
+|---|---|
+| `turbosign_send` | Send a document for signature. Emails the recipients. |
+| `turbosign_review` | Same, but emails nobody and returns a preview URL. |
+| `turbosign_status` | Has anyone signed yet? |
+| `turbosign_download` | Fetch the completed signed PDF. |
+| `turbosign_void` | Cancel a request that has not completed. |
+| `turbosign_resend` | Chase a recipient. |
+| `turbosign_audit_trail` | Hash-chained history — prepared, sent, viewed, signed. |
+| `turbosign_setup` / `turbosign_configure` / `turbosign_whoami` | Getting a machine credentialled. |
+
+## Install
+
+```bash
+git clone https://github.com/disciplin-run-org/turbosign-mcp
+cd turbosign-mcp
+python3 -m venv .venv
+.venv/bin/pip install -e .
+```
+
+Then point your MCP client at it. For Claude Code, the bundled `.mcp.json`
+already does this:
+
+```json
+{
+  "mcpServers": {
+    "turbosign": { "command": ".venv/bin/turbosign-mcp" }
+  }
+}
+```
+
+Use an absolute path to `.venv/bin/turbosign-mcp` if your client does not
+resolve relative commands from the project directory.
+
+## Getting credentialled
+
+You do not need to edit a config file. Ask the agent to run setup:
+
+```
+> turbosign_setup()
+```
+
+It reports what is missing, gives you the URL to create a TurboDocx account and
+the navigation to the API key, and then:
+
+```
+> turbosign_configure(api_key="...", org_id="...", sender_email="you@example.com")
+```
+
+The credentials are **checked against the live API before they are saved**, so a
+mistyped key fails during setup rather than on your first real send. They are
+stored owner-only in `~/.turbosign-mcp/credentials.json`.
+
+`turbosign_whoami()` shows which account a machine is sending as — worth having
+when the server is installed on several machines with different accounts.
+
+### Credentials resolve in this order
+
+1. `TURBODOCX_*` environment variables
+2. `~/.turbosign-mcp/credentials.json`
+3. Neither — the server still runs and still offers the setup tools
+
+**The environment always wins.** On an unattended box where the harness injects
+the key, it never passes through the agent's context and no tool call can
+overwrite it. `turbosign_configure` is the interactive path for a machine
+someone is sitting at.
+
+The trade-off, stated plainly: anything you pass to `turbosign_configure`
+travels through the agent's context and, on a supervised agent, across its
+approval surface. That is fine for interactive setup. For unattended
+instances, prefer the environment.
+
+## Where the signature boxes go
+
+By default (`placement="auto"`) the server reads the PDF and decides:
+
+- **Anchors, if the document has them.** Text like `{Signature1}`, `{Date1}` or
+  `{Initial2}` is replaced in place by TurboSign. The trailing digit picks the
+  recipient. Exact placement, no geometry involved.
+- **Geometry, if it does not.** A signature and date box per recipient at the
+  foot of the last page.
+
+So a document authored with anchors gets exact placement for free, and an
+arbitrary PDF still works. The response always reports which strategy was used.
+
+Override with `placement="anchor"` (fail rather than fall back),
+`placement="coordinates"`, or pass a `fields` array for full control.
+
+`turbosign_review()` takes the same arguments as `turbosign_send()` but emails
+nobody and hands back a preview URL. Worth doing the first time you send a new
+kind of document.
+
+## Configuration
+
+Every setting is optional; the three credentials are needed before a send.
+
+| Variable | Default | |
+|---|---|---|
+| `TURBODOCX_API_KEY` | — | Bearer token |
+| `TURBODOCX_ORG_ID` | — | `x-rapiddocx-org-id` header |
+| `TURBODOCX_SENDER_EMAIL` | — | Reply-to; the API rejects sends without it |
+| `TURBODOCX_SENDER_NAME` | API key's name | Shown in the request emails |
+| `TURBODOCX_BASE_URL` | `https://api.turbodocx.com` | |
+| `TURBODOCX_APP_URL` | `https://app.turbodocx.com` | Console, for `turbosign_setup` |
+| `TURBODOCX_SIGNUP_URL` | `https://www.turbodocx.com` | |
+| `TURBOSIGN_HOME` | `~/.turbosign-mcp` | Credential store location |
+| `TURBOSIGN_ALLOWED_DIRS` | `$HOME` | Roots documents may be sent from |
+| `TURBOSIGN_MAX_FILE_MB` | `10` | Upload cap |
+| `TURBOSIGN_TIMEOUT` | `90` | Per-request timeout, seconds |
+
+## Health
+
+Stdio servers have no health endpoint, so:
+
+```bash
+.venv/bin/turbosign-mcp --selftest
+```
+
+It lists the registered tools and reports how the machine is configured.
+**A machine with no credentials exits 0** — that is the normal state before
+setup, not a fault.
+
+## Notes for the curious
+
+**Why stdio and not HTTP.** TurboSign is a stateless request/response API.
+There is no long-lived session to keep warm, so a container, a port and a
+health check would be pure overhead. The client launches the process; when it
+exits, nothing is left behind.
+
+**Why `httpx` directly and not `turbodocx-sdk`.** This server *is* the thin
+wrapper. Stacking it on a second wrapper buys drift protection at the price of
+a pre-1.0 dependency and someone else's error messages — and error messages are
+most of the value here, because an agent recovers from a sentence and cannot
+recover from a stack trace.
+
+**Why the tools are synchronous.** The usual MCP advice for a call to an
+external service is a background task the client polls. Stdio clients like
+Hermes do not poll the MCP task protocol, so that would make the primary
+consumer worse. Instead the calls are synchronous with a bounded timeout
+(90s, inside Hermes' 300s per-tool budget) and a 10 MB upload cap that keeps a
+typical send well inside the tighter ~60s budget of other clients.
+
+**One thing about the API is not documented:** whether `y` is measured from the
+top or the bottom of the page. The published reference only gives the
+validation rule, which holds either way. This server assumes top-left, isolated
+to a single constant in `placement.py`. See [docs/VERIFICATION.md](docs/VERIFICATION.md)
+for how to confirm it in one call.
+
+## Development
+
+```bash
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest
+```
+
+The suite runs without network access or credentials — HTTP is mocked with
+`respx`, and PDF fixtures are generated in code rather than committed, so
+nothing in this public repo can carry a real name or address.
+
+## Licence
+
+MIT.

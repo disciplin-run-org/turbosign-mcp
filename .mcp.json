@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "turbosign": {
+      "command": ".venv/bin/turbosign-mcp"
+    }
+  }
+}
