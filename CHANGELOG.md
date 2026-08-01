@@ -2,7 +2,7 @@
 
 What changed, for the person using this — not the person reading git history.
 
-## 0.1.0 — 2026-08-01
+## 0.2.0 — 2026-08-01
 
 First release. You can now send a PDF for signature by asking for it.
 
