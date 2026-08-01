@@ -96,6 +96,36 @@ async def test_get_instructions_returns_the_workflow():
 # end def
 
 
+async def test_instructions_carry_the_three_step_test_protocol():
+    # Every consumer of this server inherits these instructions, so the
+    # no-sandbox warning and the ladder have to live here rather than in a
+    # README only Jesper reads.
+    text = await _call("get_instructions", {})
+    assert "NO TEST SANDBOX" in text
+    for rung in ("turbosign_whoami(verify=True)", "turbosign_review", "YOUR OWN address"):
+        assert rung in text, f"test ladder is missing {rung}"
+    # end for
+# end def
+
+
+async def test_instructions_tell_hosts_to_gate_send_but_not_review():
+    text = await _call("get_instructions", {})
+    assert "human approval" in text
+    assert "Leave turbosign_review ungated" in text
+# end def
+
+
+async def test_the_send_tool_warns_on_its_own_description():
+    # A model may read the tool schema without ever seeing the server
+    # instructions, so the irreversibility warning has to be on the tool too.
+    async with Client(mcp) as client:
+        tool = next(t for t in await client.list_tools() if t.name == "turbosign_send")
+    # end with
+    assert "NO SANDBOX" in tool.description
+    assert "cannot be recalled" in tool.description
+# end def
+
+
 # -- the fresh-machine state ----------------------------------------------
 
 

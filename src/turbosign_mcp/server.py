@@ -25,6 +25,32 @@ turbosign_setup(). It gives the URLs for creating a TurboDocx account and
 finding the API key and organization id, then turbosign_configure() saves them
 for this machine. turbosign_whoami() shows which account this machine sends as.
 
+THERE IS NO TEST SANDBOX. TurboSign has exactly one environment, and it is
+production: api.turbodocx.com. Every turbosign_send emails a real person, is
+recorded in a real audit trail, and cannot be recalled — only voided. There is
+no test mode, no staging host, and no dry-run flag on the API itself.
+
+So before the first send from any new machine, work up this ladder. Each rung
+proves more than the last, and only the third one can reach a stranger:
+
+  1. turbosign_whoami(verify=True) — proves the credentials work and the API is
+     reachable from here. No document, no email, no quota used.
+  2. turbosign_review(file_path, recipients) — the SAME code path as a send
+     (upload, recipient parsing, field placement, server-side validation) but
+     routed so that NO email goes out. Returns a preview URL: open it and check
+     where the signature boxes actually landed. This is the rehearsal the API
+     does not otherwise give you.
+  3. turbosign_send(...) — to YOUR OWN address first. Only once you have seen
+     that arrive should you send to anyone else.
+
+Skipping to rung 3 on a new machine, a new document layout, or a new account is
+how a half-placed signature box reaches a customer.
+
+FOR HOSTS EMBEDDING THIS SERVER: put turbosign_send behind human approval, and
+consider doing the same for turbosign_void (cancelling someone's pending
+request is also irreversible). Leave turbosign_review ungated — it is the safe
+rehearsal, and gating it removes the reason to prefer it.
+
 RECOMMENDED WORKFLOW
 1. turbosign_review(file_path, recipients) — prepares the document and returns
    a preview URL WITHOUT emailing anyone. Do this the first time you send a
@@ -49,9 +75,6 @@ always says which strategy was used.
 RECIPIENTS — "Bob Smith <bob@example.com>, ann@example.com" is enough. By
 default everyone can sign at once; pass sequential=true to make them sign in
 the order listed.
-
-Sending emails a document to a third party and cannot be recalled — only the
-void. turbosign_review sends nothing, so prefer it when unsure.
 
 Call get_instructions() to re-read this at any time.
 """

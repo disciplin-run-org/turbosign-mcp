@@ -124,8 +124,13 @@ def register_tools(mcp: FastMCP) -> None:
     ) -> dict:
         """Send a document out for signature. This emails the recipients.
 
-        This is the one that actually sends. To check placement first without
-        emailing anyone, use turbosign_review() with the same arguments.
+        THERE IS NO SANDBOX — TurboSign has one environment and it is
+        production. This reaches a real inbox and cannot be recalled, only
+        voided. On a new machine, new document layout or new account, run
+        turbosign_whoami(verify=True) then turbosign_review() first, and make
+        your first real send to your own address.
+
+        turbosign_review() takes these exact arguments and emails nobody.
 
         file_path: absolute path to a PDF (DOCX and PPTX also work, but only
             with an explicit anchor or fields, since they cannot be measured).

@@ -2,6 +2,20 @@
 
 What changed, for the person using this — not the person reading git history.
 
+## Unreleased
+
+**There is no TurboSign sandbox, and the server now says so.** TurboSign runs
+one environment: production. Every send reaches a real inbox and can only be
+voided, never recalled. The server's built-in instructions now carry a
+three-step test ladder — check credentials, rehearse with `turbosign_review`
+which emails nobody, then send to your own address first — so any MCP client
+that reads `get_instructions()` inherits it, not just people who read the
+README. The warning is on the `turbosign_send` tool description too, for models
+that never read the server instructions.
+
+Agent hosts embedding this server are told to gate `turbosign_send` behind
+human approval and leave `turbosign_review` open.
+
 ## 0.2.0 — 2026-08-01
 
 First release. You can now send a PDF for signature by asking for it.

@@ -69,6 +69,18 @@ stored owner-only in `~/.turbosign-mcp/credentials.json`.
 `turbosign_whoami()` shows which account a machine is sending as — worth having
 when the server is installed on several machines with different accounts.
 
+### Credentials never live in this repo
+
+The store is at `~/.turbosign-mcp/credentials.json` — **outside the working
+tree**, so a credential cannot be committed by accident even if `.gitignore`
+were wrong. `.gitignore` covers `credentials.json`, `.env`, `*.pem` and `*.key`
+anyway, for the case where someone puts one in the tree deliberately. The test
+suite needs no credentials, and its fixtures are obviously fake.
+
+As a backstop that does not depend on anyone being careful, this repo has
+GitHub **secret scanning and push protection enabled** — a push carrying a
+recognised key pattern is rejected rather than published.
+
 ### Credentials resolve in this order
 
 1. `TURBODOCX_*` environment variables
@@ -84,6 +96,36 @@ The trade-off, stated plainly: anything you pass to `turbosign_configure`
 travels through the agent's context and, on a supervised agent, across its
 approval surface. That is fine for interactive setup. For unattended
 instances, prefer the environment.
+
+## Testing: there is no sandbox
+
+TurboSign has exactly one environment, and it is production. There is no test
+host, no sandbox key and no dry-run flag — the "free sandbox" on the vendor's
+marketing page means the free tier (5 signatures a month) on the live API. Every
+`turbosign_send` reaches a real inbox, lands in a real audit trail, and cannot
+be recalled, only voided.
+
+So the server provides the rehearsal the API does not. Work up this ladder on
+any new machine, new document layout, or new account:
+
+| | | Emails anyone? |
+|---|---|---|
+| 1 | `turbosign_whoami(verify=True)` — credentials work, API reachable | No |
+| 2 | `turbosign_review(...)` — same code path as send, preview URL back | No |
+| 3 | `turbosign_send(...)` **to your own address first** | Yes |
+
+Rung 2 is the important one: it uploads the document, parses the recipients,
+places the fields and passes the API's own validation — everything a send does
+except the send. Open the preview URL and look at where the boxes landed.
+
+These instructions ship inside the server, so any MCP client that reads
+`get_instructions()` gets them too, not just readers of this file.
+
+**If you are embedding this server in an agent host**, gate `turbosign_send`
+behind human approval, and consider gating `turbosign_void` as well —
+cancelling someone's pending signature request is equally irreversible. Leave
+`turbosign_review` ungated: it is the safe rehearsal, and gating it removes the
+reason to prefer it.
 
 ## Where the signature boxes go
 
