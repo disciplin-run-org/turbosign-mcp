@@ -5,11 +5,37 @@ documentation does not settle. Both are isolated to one place each, and both
 are confirmed by a single live call. Do this once, when credentials are first
 available, and record the answer here.
 
-Status: **not yet run** — no live credentials at the time of writing.
+Status: **both settled, 2026-08-01**, live against `api.turbodocx.com` with a
+real key. Neither needed a code change — the assumptions were right. Details
+under each heading. What remains open is not an assumption but an untested
+path: see the observations below.
+
+### Open observations from the first live run (2026-08-01)
+
+- `prepare-for-review` echoed `signingOrder: null` back for a recipient that
+  was sent as `signingOrder: 1`. Harmless for review, but confirm that a real
+  `turbosign_send` preserves the order before relying on `sequential=True` —
+  if the API drops it, sequential signing silently becomes parallel, which is
+  a correctness bug worth catching before a multi-signer contract.
+- `status` came back lowercase (`review_ready`) where the reference documents
+  `REVIEW_READY`. Nothing depends on the case today; do not start comparing
+  status strings without normalising.
 
 ---
 
-## 1. Which corner is `y` measured from?
+## 1. Which corner is `y` measured from? — CONFIRMED
+
+**Result (2026-08-01):** top-left origin, as assumed. `Y_ORIGIN = "top"` is
+correct and no code changed.
+
+An unanchored test PDF was prepared with `turbosign_review` (no emails sent),
+`placement` came back as `coordinates`, and the preview showed the signature
+and date boxes at the **foot** of the last page, below a marker printed near
+the bottom of the document — which is where a top-left origin puts them.
+
+Preview: `https://app.turbodocx.com/e-signature/assign-fields/ad7adac7-5a32-4d7a-8b70-305e5eef394d`
+
+The record below is kept for whoever has to re-run this after an API change.
 
 **The assumption.** `placement.Y_ORIGIN = "top"` in
 `src/turbosign_mcp/placement.py` — that `y` is the distance down from the top
@@ -44,7 +70,7 @@ Open the `preview_url` it returns and look at the last page.
 
 ---
 
-## 2. Does a bad key give 401 where a good key gives 404?
+## 2. Does a bad key give 401 where a good key gives 404? — CONFIRMED
 
 **The assumption.** `TurboSignClient.probe()` in `src/turbosign_mcp/api.py`
 verifies credentials by requesting the status of a well-formed but nonexistent
@@ -66,9 +92,21 @@ credentials (401). TurboSign said: Unauthorized
 ```
 
 So the API does distinguish auth failure from a missing resource, and the
-reject path works. What remains is the other half: that a **valid** key asking
-for a nonexistent document gets 404 rather than something else. That needs a
-working key.
+reject path works.
+
+**The other half is now confirmed too** (2026-08-01, same host, with a real
+key): `turbosign_whoami(verify=True)` returned `credentials_valid: true` and
+"Credentials accepted." — the probe asked for the all-zero UUID, got a 404
+rather than a 401, and read that correctly as "the key works, the document does
+not exist".
+
+```json
+{"configured": true, "api_key": "****ba2d",
+ "credentials_valid": true, "verification": "Credentials accepted."}
+```
+
+**Assumption 2 is settled: the probe is sound in both directions.** A bad key
+is rejected and nothing is saved; a good key passes. No change needed.
 
 **How to settle it.** With working credentials in place:
 

@@ -221,10 +221,11 @@ consumer worse. Instead the calls are synchronous with a bounded timeout
 typical send well inside the tighter ~60s budget of other clients.
 
 **One thing about the API is not documented:** whether `y` is measured from the
-top or the bottom of the page. The published reference only gives the
-validation rule, which holds either way. This server assumes top-left, isolated
-to a single constant in `placement.py`. See [docs/VERIFICATION.md](docs/VERIFICATION.md)
-for how to confirm it in one call.
+top or the bottom of the page. The published reference gives only the
+validation rule, which holds either way. It is top-left — verified against the
+live API on 2026-08-01, not inferred — and isolated to a single constant in
+`placement.py` so a future change stays a one-line fix. The record, and how to
+re-run the check, is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Development
 

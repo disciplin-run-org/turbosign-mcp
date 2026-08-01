@@ -131,10 +131,11 @@ def test_page_geometry_reads_a_non_default_page_size():
 # -- the coordinate-origin assumption -------------------------------------
 
 
-def test_the_y_origin_assumption_is_the_documented_one():
-    # Regression guard for the one undocumented thing about this API. If a
-    # live turbosign_review shows the boxes upside-down, flip Y_ORIGIN to
-    # "bottom" and update this test — see docs/VERIFICATION.md.
+def test_the_y_origin_matches_the_verified_live_behaviour():
+    # Not a guess: verified 2026-08-01 against api.turbodocx.com, where a
+    # review of an unanchored PDF put the boxes at the foot of the page.
+    # If a future API change moves them, flip this constant and this test
+    # together — nothing else depends on it. See docs/VERIFICATION.md.
     assert placement.Y_ORIGIN == "top"
 # end def
 

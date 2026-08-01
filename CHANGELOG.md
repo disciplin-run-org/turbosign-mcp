@@ -79,7 +79,8 @@ Credentials are stored owner-only, and environment variables always take
 precedence over the saved ones, so a centrally-managed machine cannot have its
 identity changed by a tool call.
 
-**Known unknown.** One detail of the TurboSign API is undocumented — whether
-vertical positions are measured from the top or the bottom of the page. This
-release assumes the top. If your first preview shows the signature box at the
-wrong end of the page, `docs/VERIFICATION.md` explains the one-line fix.
+**Placement is verified, not assumed.** One detail of the TurboSign API is
+undocumented — whether vertical positions are measured from the top or the
+bottom of the page. It is the top, checked against the live API rather than
+inferred: an unanchored test document put its signature and date boxes exactly
+where intended, at the foot of the last page.

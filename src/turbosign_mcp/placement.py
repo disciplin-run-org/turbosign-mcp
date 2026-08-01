@@ -23,16 +23,18 @@ from .errors import TurboSignError
 # ---------------------------------------------------------------------------
 # Coordinate system
 # ---------------------------------------------------------------------------
-# Which page corner `y` is measured from is the one thing about this API that
-# is NOT documented — the reference only gives the validation rule
-# (`y + height <= pageHeight`), which holds either way. TurboSign's field
-# editor is a web viewer, and web viewers put the origin at the top-left, so
-# that is the assumption here.
+# Which page corner `y` is measured from is not documented — the reference
+# gives only the validation rule (`y + height <= pageHeight`), which holds
+# either way. TurboSign's field editor is a web viewer, and web viewers put the
+# origin at the top-left.
 #
-# It is isolated to this one constant on purpose: confirm it with a single
-# turbosign_review() call, look at where the box lands in the preview, and if
-# it is upside-down flip this to "bottom". Nothing else needs to change.
-# See docs/VERIFICATION.md.
+# VERIFIED 2026-08-01 against api.turbodocx.com: a review of an unanchored PDF
+# put the signature and date boxes at the foot of the last page, where this
+# constant intends them. Top-left origin is correct — not an assumption any
+# more. Full record in docs/VERIFICATION.md.
+#
+# Still isolated to this one constant, so a future API change is a one-line
+# fix rather than a rewrite.
 Y_ORIGIN = "top"
 
 # Page geometry for the coordinate fallback, in PDF points (72 per inch).
