@@ -168,7 +168,37 @@ covers that path.
 
 ---
 
-## 3. Full end-to-end pass
+## 4. Full end-to-end pass — DONE 2026-08-02
+
+The whole lifecycle ran against the live API on a two-signer agreement, and
+every tool in the server has now touched production at least once.
+
+```
+review    -> placement: anchor, no emails             ok
+send      -> emails_sent: true, Party A only          ok
+status    -> under_review -> completed                ok
+sign      -> Party A, then Party B released           ok
+download  -> 2,207,255 bytes, valid 1-page PDF        ok
+audit     -> per-recipient entries, hash-chained      ok
+void      -> status: voided, reason recorded          ok
+```
+
+Both parties received the executed agreement and a separate audit-trail PDF.
+The rendered page shows both signatures on their intended lines, both dates
+filled, and a per-field hash fingerprint under each — the anchors themselves
+painted over and invisible.
+
+**Two things learned from the executed document:**
+
+1. **Anchor tokens survive in the text layer.** They are covered visually but
+   `{Signature1}` is still extractable from the finished contract. Author real
+   templates with the anchors in white or 1pt text — the API locates them by
+   text extraction, so visibility was never required. See the README.
+2. **Dates render US-format** (`08/01/2026` for 1 August). Ambiguous for a
+   day-first counterparty; use an explicit `text` field or spell the date out
+   in the body for cross-border agreements.
+
+### The procedure, for re-running after an API change
 
 Once the above are settled, run the whole lifecycle once against the live API:
 

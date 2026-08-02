@@ -4,6 +4,27 @@ What changed, for the person using this — not the person reading git history.
 
 ## Unreleased
 
+**Verified end to end against the live service.** A real two-signer agreement
+went out, was signed in order, came back executed and was downloaded — every
+tool in the server has now been exercised against production, not just against
+mocks. Sequential signing does what it says: Party B is not emailed until Party
+A has signed.
+
+Two practical findings from the executed contract, both now in the README:
+
+- **Write your anchor tokens in white text.** The finished PDF paints over
+  them so nobody sees `{Signature1}` on screen or paper — but the text is
+  still in the layer underneath, and shows up in copy-paste, search indexes
+  and screen readers. White (or 1pt) anchors avoid it entirely; the API finds
+  them by text extraction, so they never needed to be visible.
+- **Dates render US-format** (`08/01/2026` for 1 August). Worth an explicit
+  date field or a spelled-out date in the body for a counterparty who reads
+  dates day-first.
+
+Also fixed: the audit trail was reporting `recipient: null` on every entry, so
+the tool meant to answer "has Bob opened it yet?" could not. It now names the
+recipient and includes the API's own description of each action.
+
 **A way to save your API key without it entering the conversation.**
 
 ```bash

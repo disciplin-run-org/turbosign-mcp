@@ -166,6 +166,29 @@ arbitrary PDF still works. The response always reports which strategy was used.
 Override with `placement="anchor"` (fail rather than fall back),
 `placement="coordinates"`, or pass a `fields` array for full control.
 
+### Write anchors in white text
+
+TurboSign paints over an anchor and draws the field on top, so the token is
+invisible in the executed PDF — but **the original text is still in the text
+layer**. Extract text from a finished contract authored this way and you get:
+
+```
+   Signature:  {Signature1}
+   Date:  {Date1}
+```
+
+Nobody sees it on screen or on paper. It does show up in copy-paste, in search
+indexes, in a document-management system's full-text extract, and to a screen
+reader. For a real agreement that is a wart worth avoiding: set the anchor
+tokens in **white** (or 1pt) text in your template. The API finds them by text
+extraction, so they never needed to be visible in the first place.
+
+Verified on a real executed document, 2026-08-02.
+
+**Dates render US-format** (`08/01/2026` for 1 August). If your counterparty
+reads dates day-first, put an explicit `text` field with an unambiguous format
+next to it, or spell the date in the body of the agreement.
+
 `turbosign_review()` takes the same arguments as `turbosign_send()` but emails
 nobody and hands back a preview URL. Worth doing the first time you send a new
 kind of document.
