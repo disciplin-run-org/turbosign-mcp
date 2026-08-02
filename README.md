@@ -166,28 +166,64 @@ arbitrary PDF still works. The response always reports which strategy was used.
 Override with `placement="anchor"` (fail rather than fall back),
 `placement="coordinates"`, or pass a `fields` array for full control.
 
-### Write anchors in white text
+### Anchors leave their token in the executed PDF
 
-TurboSign paints over an anchor and draws the field on top, so the token is
-invisible in the executed PDF — but **the original text is still in the text
-layer**. Extract text from a finished contract authored this way and you get:
+TurboSign paints over an anchor and draws the field on top, so nobody sees
+`{Signature1}` on screen or on paper. But **the token is still in the text
+layer of the finished contract**:
 
 ```
    Signature:  {Signature1}
    Date:  {Date1}
 ```
 
-Nobody sees it on screen or on paper. It does show up in copy-paste, in search
-indexes, in a document-management system's full-text extract, and to a screen
-reader. For a real agreement that is a wart worth avoiding: set the anchor
-tokens in **white** (or 1pt) text in your template. The API finds them by text
-extraction, so they never needed to be visible in the first place.
+It reaches copy-paste, search indexes, a document-management system's full-text
+extract, and screen readers.
+
+**There is no way to avoid this while using anchors.** Making the token white
+or 1pt does not help — text extraction ignores colour and size, so pypdf, a
+search index and a screen reader all still find it. It only ever changed how
+the *source* looked, and TurboSign already covers the token in the output
+anyway. And the token cannot simply be omitted, because the API locates the
+field by extracting that text.
+
+So it is a genuine trade-off, not a technique problem:
+
+| | Placement follows reflowed content | Clean text layer |
+|---|---|---|
+| **Anchors** (`{Signature1}`) | Yes | No — token survives |
+| **Coordinates / explicit `fields`** | No — fixed geometry | Yes — no markers at all |
+
+For a contract where the text layer matters — anything indexed, archived, or
+read aloud — use `placement="coordinates"` or supply `fields` directly. Nothing
+is written into the document, so nothing can leak out of it.
 
 Verified on a real executed document, 2026-08-02.
 
-**Dates render US-format** (`08/01/2026` for 1 August). If your counterparty
-reads dates day-first, put an explicit `text` field with an unambiguous format
-next to it, or spell the date in the body of the agreement.
+### Dates render US-format, and the API gives you no say
+
+A `date` field renders `08/01/2026` for 1 August 2026. The documented field
+options are `type`, `required`, `defaultValue`, `isReadonly`, `backgroundColor`
+and geometry — **there is no per-field date-format parameter**, in the REST API
+or in any of the official SDKs.
+
+The only lever is an organization-level entitlement, `hasAdvancedDateFormats`,
+which is set when an organization is provisioned rather than per request. Even
+then the documented choices are `MM/DD/YYYY` and `DD/MM/YYYY` — both numeric,
+neither unambiguous.
+
+If a day-first counterparty might read the document, your options are:
+
+1. **Spell the date in the body** of the agreement ("this 1st day of August,
+   2026") and treat the signature field's date as a machine timestamp.
+2. **Use a readonly `text` field** with `defaultValue` set to `Aug 1, 2026`.
+   Unambiguous — but it is frozen at *send* time, not signing time, so it is
+   only honest for a document signed the same day.
+3. **Ask TurboDocx** whether `hasAdvancedDateFormats` can be enabled on your
+   organization, and what formats it unlocks.
+
+Option 1 is the safe default: the body text is what a court reads, and the
+field date stays a true record of when signing happened.
 
 `turbosign_review()` takes the same arguments as `turbosign_send()` but emails
 nobody and hands back a preview URL. Worth doing the first time you send a new
@@ -243,12 +279,10 @@ consumer worse. Instead the calls are synchronous with a bounded timeout
 (90s, inside Hermes' 300s per-tool budget) and a 10 MB upload cap that keeps a
 typical send well inside the tighter ~60s budget of other clients.
 
-**One thing about the API is not documented:** whether `y` is measured from the
-top or the bottom of the page. The published reference gives only the
-validation rule, which holds either way. It is top-left — verified against the
-live API on 2026-08-01, not inferred — and isolated to a single constant in
-`placement.py` so a future change stays a one-line fix. The record, and how to
-re-run the check, is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+**Coordinates are top-left origin** — `y` counts down from the top edge. That
+is both documented ("Vertical position from top edge") and verified against the
+live API, and it is isolated to one constant in `placement.py` so a future
+change stays a one-line fix. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Development
 

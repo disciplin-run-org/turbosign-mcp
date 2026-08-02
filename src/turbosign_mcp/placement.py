@@ -23,18 +23,20 @@ from .errors import TurboSignError
 # ---------------------------------------------------------------------------
 # Coordinate system
 # ---------------------------------------------------------------------------
-# Which page corner `y` is measured from is not documented — the reference
-# gives only the validation rule (`y + height <= pageHeight`), which holds
-# either way. TurboSign's field editor is a web viewer, and web viewers put the
-# origin at the top-left.
+# Top-left origin: `y` is the distance DOWN from the top edge of the page.
 #
-# VERIFIED 2026-08-01 against api.turbodocx.com: a review of an unanchored PDF
-# put the signature and date boxes at the foot of the last page, where this
-# constant intends them. Top-left origin is correct — not an assumption any
-# more. Full record in docs/VERIFICATION.md.
+# Documented — "Vertical position from top edge (pixels)" — though not on the
+# TurboSign API page that covers everything else about fields, which is why
+# this was initially treated as an open question and verified empirically
+# instead. It was: a review of an unanchored PDF put the boxes at the foot of
+# the last page, matching. Documentation and behaviour agree.
 #
-# Still isolated to this one constant, so a future API change is a one-line
-# fix rather than a rewrite.
+# The docs say "pixels" while we send PDF points from pypdf's mediabox. That
+# discrepancy is moot because build_coordinate_fields also sends pageWidth and
+# pageHeight, so the server scales into whatever units it uses.
+#
+# Kept as one constant so a future API change stays a one-line fix.
+# Record in docs/VERIFICATION.md.
 Y_ORIGIN = "top"
 
 # Page geometry for the coordinate fallback, in PDF points (72 per inch).

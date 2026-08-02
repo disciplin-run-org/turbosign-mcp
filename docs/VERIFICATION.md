@@ -56,7 +56,20 @@ each resolved on page 1.
 
 ---
 
-## 1. Which corner is `y` measured from? — CONFIRMED
+## 1. Which corner is `y` measured from? — CONFIRMED (and it was documented)
+
+**Correction, 2026-08-02.** This was framed below as undocumented. It is
+documented — the field-reference table gives `y` as "Vertical position from top
+edge (pixels)" — just not on the TurboSign API page that covers everything else
+about fields, which is where it was looked for. The empirical check agreed with
+the documentation, so nothing behaved unexpectedly and no code changed; only
+the claim that it was unknowable was wrong.
+
+Note the docs say *pixels* where this server sends PDF points from pypdf's
+mediabox. That is harmless: `build_coordinate_fields` also sends `pageWidth`
+and `pageHeight`, so the server scales into whatever units it uses. Do not drop
+those two fields on the grounds that they are optional.
+
 
 **Result (2026-08-01):** top-left origin, as assumed. `Y_ORIGIN = "top"` is
 correct and no code changed.
@@ -190,13 +203,28 @@ painted over and invisible.
 
 **Two things learned from the executed document:**
 
-1. **Anchor tokens survive in the text layer.** They are covered visually but
-   `{Signature1}` is still extractable from the finished contract. Author real
-   templates with the anchors in white or 1pt text — the API locates them by
-   text extraction, so visibility was never required. See the README.
-2. **Dates render US-format** (`08/01/2026` for 1 August). Ambiguous for a
-   day-first counterparty; use an explicit `text` field or spell the date out
-   in the body for cross-border agreements.
+1. **Anchor tokens survive in the text layer.** They are covered visually, but
+   `{Signature1}` is still extractable from the finished contract, so it
+   reaches copy-paste, search indexes and screen readers.
+
+   An earlier draft of this file advised authoring anchors in white or 1pt
+   text. That was wrong, and Jesper caught it: extraction ignores colour and
+   size, so pypdf, a search index and a screen reader all still find the
+   token. Nor can the token be omitted — the API locates the field by
+   extracting exactly that text. **There is no way to use anchors and keep a
+   clean text layer.** Where the text layer matters, use
+   `placement="coordinates"` or explicit `fields`, which write nothing into
+   the document at all. See the README for the trade-off table.
+
+2. **Dates render US-format** (`08/01/2026` for 1 August), and the API offers
+   no control over it: the documented field options are `type`, `required`,
+   `defaultValue`, `isReadonly`, `backgroundColor` and geometry — no
+   date-format key, in the REST API or any official SDK. The only lever found
+   is an organization entitlement, `hasAdvancedDateFormats`, set at
+   provisioning time, and even that documents only `MM/DD/YYYY` and
+   `DD/MM/YYYY` — both numeric. For a day-first counterparty, spell the date
+   in the body of the agreement and let the field date stand as the machine
+   timestamp.
 
 ### The procedure, for re-running after an API change
 

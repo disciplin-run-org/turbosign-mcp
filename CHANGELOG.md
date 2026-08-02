@@ -12,14 +12,17 @@ A has signed.
 
 Two practical findings from the executed contract, both now in the README:
 
-- **Write your anchor tokens in white text.** The finished PDF paints over
-  them so nobody sees `{Signature1}` on screen or paper — but the text is
-  still in the layer underneath, and shows up in copy-paste, search indexes
-  and screen readers. White (or 1pt) anchors avoid it entirely; the API finds
-  them by text extraction, so they never needed to be visible.
-- **Dates render US-format** (`08/01/2026` for 1 August). Worth an explicit
-  date field or a spelled-out date in the body for a counterparty who reads
-  dates day-first.
+- **Anchors leave their token in the finished PDF.** Nobody sees
+  `{Signature1}` on screen or paper, but it is still in the text layer, so it
+  reaches copy-paste, search indexes and screen readers. This cannot be
+  avoided while using anchors — the API finds the field by extracting that
+  exact text, and white or 1pt type does not help because extraction ignores
+  colour and size. Where the text layer matters, use coordinate placement
+  instead: it writes nothing into the document.
+- **Dates render US-format** (`08/01/2026` for 1 August) and the API gives you
+  no say — there is no date-format option on a field. For a counterparty who
+  reads dates day-first, spell the date out in the body of the agreement and
+  let the field date stand as the machine timestamp.
 
 Also fixed: the audit trail was reporting `recipient: null` on every entry, so
 the tool meant to answer "has Bob opened it yet?" could not. It now names the
