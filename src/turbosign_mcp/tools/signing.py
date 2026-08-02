@@ -48,6 +48,47 @@ def _summarise(body: dict, strategy: str, sent: bool) -> dict:
 # end def
 
 
+def _trim_audit_entry(entry: dict, max_message: int = 240) -> dict:
+    """Flatten one audit entry down to what actually answers a question.
+
+    The recipient an action concerns is NOT at the top level — the top-level
+    ``recipient`` key is null on every entry the API returns. It lives at
+    ``details.recipientInfo``, and ``details.message`` is the human sentence
+    ("...email sent to Jesper Test (test@jurcenoks.com)"). Reading only the top
+    level made this tool answer "who was emailed?" with null, which is the one
+    question it exists to answer.
+
+    Found by using it: a two-signer sequencing test where the trimmed output
+    said recipient=null while the raw payload named the recipient outright.
+    """
+    details = entry.get("details") if isinstance(entry.get("details"), dict) else {}
+    recipient_info = details.get("recipientInfo")
+    if not isinstance(recipient_info, dict):
+        recipient_info = entry.get("recipient")
+    # end if
+    if not isinstance(recipient_info, dict):
+        recipient_info = {}
+    # end if
+
+    message = details.get("message")
+    if isinstance(message, str) and len(message) > max_message:
+        message = message[:max_message].rstrip() + "..."
+    # end if
+
+    out = {
+        "actionType": entry.get("actionType"),
+        "timestamp": entry.get("timestamp"),
+        "user": (entry.get("user") or {}).get("email"),
+        "recipient": recipient_info.get("email"),
+        "recipient_name": recipient_info.get("name"),
+    }
+    if message:
+        out["message"] = message
+    # end if
+    return {k: v for k, v in out.items() if v is not None}
+# end def
+
+
 def _prepare_args(
     file_path: str,
     recipients,
@@ -302,12 +343,7 @@ def register_tools(mcp: FastMCP) -> None:
         data = body.get("data") if isinstance(body.get("data"), dict) else body
         entries = data.get("auditTrail") or []
         trimmed = [
-            {
-                "actionType": e.get("actionType"),
-                "timestamp": e.get("timestamp"),
-                "user": (e.get("user") or {}).get("email"),
-                "recipient": (e.get("recipient") or {}).get("email"),
-            }
+            _trim_audit_entry(e)
             for e in entries[-max(1, limit):]
             if isinstance(e, dict)
         ]

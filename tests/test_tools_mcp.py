@@ -354,6 +354,52 @@ async def test_resend_without_ids_says_where_to_get_them(configured):
 
 
 @respx.mock
+async def test_audit_trail_names_the_recipient_an_action_concerns(configured):
+    # Shape copied from a real api.turbodocx.com response. The top-level
+    # `recipient` is null on every entry the API returns; the recipient lives
+    # in details.recipientInfo. Reading only the top level made this tool
+    # answer "who was emailed?" with null.
+    respx.get(f"{BASE}/turbosign/documents/d1/audit-trail").mock(
+        return_value=httpx.Response(200, json={"data": {
+            "document": {"id": "d1"},
+            "auditTrail": [{
+                "actionType": "email_notification_sent",
+                "timestamp": "2026-08-02T00:08:11.000Z",
+                "recipient": None,
+                "details": {
+                    "message": "Signature request notification email sent to "
+                               "Jesper Test (test@jurcenoks.com)",
+                    "recipientInfo": {"id": "r1", "name": "Jesper Test",
+                                      "email": "test@jurcenoks.com"},
+                },
+            }],
+        }})
+    )
+    result = await _call("turbosign_audit_trail", {"document_id": "d1"})
+    entry = result["entries"][0]
+    assert entry["recipient"] == "test@jurcenoks.com"
+    assert entry["recipient_name"] == "Jesper Test"
+    assert "email sent to" in entry["message"]
+# end def
+
+
+@respx.mock
+async def test_audit_trail_truncates_a_long_detail_message(configured):
+    # The pdf-updated entry's message runs to several hundred characters of
+    # file ids; unbounded, it would bloat the agent's context.
+    respx.get(f"{BASE}/turbosign/documents/d1/audit-trail").mock(
+        return_value=httpx.Response(200, json={"data": {"auditTrail": [{
+            "actionType": "document_pdf_updated",
+            "details": {"message": "x" * 900},
+        }]}})
+    )
+    result = await _call("turbosign_audit_trail", {"document_id": "d1"})
+    assert len(result["entries"][0]["message"]) < 300
+    assert result["entries"][0]["message"].endswith("...")
+# end def
+
+
+@respx.mock
 async def test_audit_trail_is_trimmed_to_the_limit(configured):
     entries = [
         {"actionType": f"a{i}", "timestamp": f"t{i}"} for i in range(10)

@@ -5,21 +5,54 @@ documentation does not settle. Both are isolated to one place each, and both
 are confirmed by a single live call. Do this once, when credentials are first
 available, and record the answer here.
 
-Status: **both settled, 2026-08-01**, live against `api.turbodocx.com` with a
-real key. Neither needed a code change — the assumptions were right. Details
-under each heading. What remains open is not an assumption but an untested
-path: see the observations below.
+Status: **all settled, 2026-08-01/02**, live against `api.turbodocx.com` with a
+real key — coordinate origin, credential probe, and sequential signing. The two
+original assumptions were right and needed no code change; the third question
+arose during testing and is answered below. Remaining notes are observations
+about the API's shape, not open risks.
 
-### Open observations from the first live run (2026-08-01)
+### 3. Does `sequential=True` actually work? — CONFIRMED
 
-- `prepare-for-review` echoed `signingOrder: null` back for a recipient that
-  was sent as `signingOrder: 1`. Harmless for review, but confirm that a real
-  `turbosign_send` preserves the order before relying on `sequential=True` —
-  if the API drops it, sequential signing silently becomes parallel, which is
-  a correctness bug worth catching before a multi-signer contract.
-- `status` came back lowercase (`review_ready`) where the reference documents
-  `REVIEW_READY`. Nothing depends on the case today; do not start comparing
-  status strings without normalising.
+**The worry.** Both prepare endpoints echo `signingOrder: null` for recipients
+sent as `1` and `2`. TurboDocx's own documented response example shows
+`"signingOrder": 1` echoed back, so this looked like the API discarding the
+field — which would make `sequential=True` a silent lie, delivering to every
+party at once on a contract meant to be signed in order.
+
+**Result (2026-08-02): the order is honoured. The null is response-shaping
+only.** Two independent confirmations:
+
+- The console's assign-fields view shows the two recipients with their order,
+  naming Party B as second.
+- The audit trail of a real send records exactly **one**
+  `email_notification_sent`, and it names Party A alone:
+
+  ```
+  "message": "Signature request notification email sent to
+              Jesper Test (test@jurcenoks.com)"
+  "recipientInfo": {"name": "Jesper Test", "email": "test@jurcenoks.com"}
+  ```
+
+  Party B was not emailed. Sequential delivery works.
+
+**Do not "fix" the null.** It is what the API returns; the data behind it is
+correct. Read the order back from the audit trail, not from the send response.
+
+The same run confirmed anchor placement end to end —
+`fieldsProcessed: 4`, with `{Signature1}` `{Date1}` `{Signature2}` `{Date2}`
+each resolved on page 1.
+
+### Open observations
+
+- `status` comes back lowercase (`review_ready`, `under_review`) where the
+  reference documents `REVIEW_READY`. Nothing compares status strings today;
+  do not start without normalising the case.
+- `turbosign_status` returns only `{"status": ...}` — no recipient array, so it
+  cannot answer "who has signed". The audit trail is the only source for
+  per-recipient state.
+- The audit trail's top-level `recipient` key is null on **every** entry; the
+  recipient an action concerns lives in `details.recipientInfo`. This bit once
+  already — see the `_trim_audit_entry` docstring.
 
 ---
 
