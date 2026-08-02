@@ -108,6 +108,18 @@ async def test_instructions_carry_the_three_step_test_protocol():
 # end def
 
 
+async def test_instructions_warn_about_the_ambiguous_default_date_format():
+    # A US-format date on a cross-border contract is a real-world misread
+    # waiting to happen, and the fix is a console setting this server cannot
+    # reach — so the agent has to know to ask the human for it.
+    text = await _call("get_instructions", {})
+    assert "DATES" in text
+    assert "08/01/2026" in text
+    assert "account settings" in text
+    assert "not retroactive" in text
+# end def
+
+
 async def test_instructions_tell_hosts_to_gate_send_but_not_review():
     text = await _call("get_instructions", {})
     assert "human approval" in text

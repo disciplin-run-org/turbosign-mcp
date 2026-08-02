@@ -76,6 +76,16 @@ RECIPIENTS — "Bob Smith <bob@example.com>, ann@example.com" is enough. By
 default everyone can sign at once; pass sequential=true to make them sign in
 the order listed.
 
+DATES — a date field renders in the SENDING ACCOUNT's configured format, and
+the default is US-style: 08/01/2026 means 1 August 2026, which a day-first
+reader will misread as 8 January. This is not settable per request and this
+server cannot override it. Tell the human to change it once, in the TurboDocx
+console under account settings, where unambiguous formats such as
+"Saturday, August 1st, 2026" are available. Worth doing before anything goes
+to a counterparty in another country. It is not retroactive — already-signed
+documents keep the format they were signed with — so set it before sending,
+not after.
+
 Call get_instructions() to re-read this at any time.
 """
 

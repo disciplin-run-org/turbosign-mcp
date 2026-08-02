@@ -278,7 +278,20 @@ Before the first real send, read [VERIFICATION.md](VERIFICATION.md): the
 coordinate-origin question there is settled by exactly that review call, and it
 is worth settling on the first document rather than the first important one.
 
-## 9. Which instances
+## 9. One per-account setting to apply by hand
+
+Date rendering is configured in the TurboDocx console under account settings,
+not through the API — this server cannot set it per document. The default is
+US-format (`08/01/2026`), which is ambiguous for a day-first reader; richer,
+unambiguous formats such as `Saturday, August 1st, 2026` are available there.
+
+It is a property of the sending account, so **each instance's TurboDocx account
+needs it set separately**, or documents from `hermes-rh` and `hermes-jj` will
+render dates differently. Worth doing when the account is created, since it is
+not retroactive — already-executed documents keep the format they were signed
+with.
+
+## 10. Which instances
 
 Not decided here. `hermes-jj` (personal, 24/7) is the obvious candidate;
 whether the Radical Honesty instance should be able to send signature requests

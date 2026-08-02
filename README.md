@@ -200,30 +200,32 @@ is written into the document, so nothing can leak out of it.
 
 Verified on a real executed document, 2026-08-02.
 
-### Dates render US-format, and the API gives you no say
+### Date format is an account setting, not an API parameter
 
-A `date` field renders `08/01/2026` for 1 August 2026. The documented field
-options are `type`, `required`, `defaultValue`, `isReadonly`, `backgroundColor`
-and geometry — **there is no per-field date-format parameter**, in the REST API
-or in any of the official SDKs.
+Out of the box a `date` field renders `08/01/2026` for 1 August 2026 —
+ambiguous to anyone who reads dates day-first. There is **no per-field
+date-format parameter**: the field options are `type`, `required`,
+`defaultValue`, `isReadonly`, `backgroundColor` and geometry, in the REST API
+and in every official SDK.
 
-The only lever is an organization-level entitlement, `hasAdvancedDateFormats`,
-which is set when an organization is provisioned rather than per request. Even
-then the documented choices are `MM/DD/YYYY` and `DD/MM/YYYY` — both numeric,
-neither unambiguous.
+**Change it in the TurboDocx console, under your account settings.** Richer
+formats are available than the API docs suggest — including fully unambiguous
+ones like `Saturday, August 1st, 2026`. Set it once and every subsequent
+signature uses it.
 
-If a day-first counterparty might read the document, your options are:
+Two consequences worth knowing:
 
-1. **Spell the date in the body** of the agreement ("this 1st day of August,
-   2026") and treat the signature field's date as a machine timestamp.
-2. **Use a readonly `text` field** with `defaultValue` set to `Aug 1, 2026`.
-   Unambiguous — but it is frozen at *send* time, not signing time, so it is
-   only honest for a document signed the same day.
-3. **Ask TurboDocx** whether `hasAdvancedDateFormats` can be enabled on your
-   organization, and what formats it unlocks.
+- **It is a property of the sending account, not the request.** Every document
+  that account sends gets that format, and this server cannot override it per
+  send. If you run several machines with different TurboDocx accounts, set the
+  format on each one, or they will not match.
+- **It is not retroactive.** Verified: re-downloading an already-executed
+  document after changing the setting returns a byte-identical file. The
+  format is baked in at signing time.
 
-Option 1 is the safe default: the body text is what a court reads, and the
-field date stays a true record of when signing happened.
+If you cannot change the setting — someone else's account, say — spell the date
+in the body of the agreement ("this 1st day of August, 2026") and let the field
+date stand as the machine timestamp.
 
 `turbosign_review()` takes the same arguments as `turbosign_send()` but emails
 nobody and hands back a preview URL. Worth doing the first time you send a new

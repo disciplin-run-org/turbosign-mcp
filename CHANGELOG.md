@@ -19,10 +19,13 @@ Two practical findings from the executed contract, both now in the README:
   exact text, and white or 1pt type does not help because extraction ignores
   colour and size. Where the text layer matters, use coordinate placement
   instead: it writes nothing into the document.
-- **Dates render US-format** (`08/01/2026` for 1 August) and the API gives you
-  no say — there is no date-format option on a field. For a counterparty who
-  reads dates day-first, spell the date out in the body of the agreement and
-  let the field date stand as the machine timestamp.
+- **Dates default to US-format** (`08/01/2026` for 1 August), which is
+  ambiguous to anyone who reads dates day-first. There is no date-format
+  option on a field — but you can change it in the TurboDocx console under
+  your account settings, where richer formats are available than the API docs
+  describe, including `Saturday, August 1st, 2026`. It applies to everything
+  that account sends, and it is not retroactive: documents already executed
+  keep the format they were signed with.
 
 Also fixed: the audit trail was reporting `recipient: null` on every entry, so
 the tool meant to answer "has Bob opened it yet?" could not. It now names the

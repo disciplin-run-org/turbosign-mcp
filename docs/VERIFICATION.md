@@ -216,15 +216,27 @@ painted over and invisible.
    `placement="coordinates"` or explicit `fields`, which write nothing into
    the document at all. See the README for the trade-off table.
 
-2. **Dates render US-format** (`08/01/2026` for 1 August), and the API offers
-   no control over it: the documented field options are `type`, `required`,
-   `defaultValue`, `isReadonly`, `backgroundColor` and geometry — no
-   date-format key, in the REST API or any official SDK. The only lever found
-   is an organization entitlement, `hasAdvancedDateFormats`, set at
-   provisioning time, and even that documents only `MM/DD/YYYY` and
-   `DD/MM/YYYY` — both numeric. For a day-first counterparty, spell the date
-   in the body of the agreement and let the field date stand as the machine
-   timestamp.
+2. **Dates default to US-format** (`08/01/2026` for 1 August) and there is no
+   per-field date-format parameter in the REST API or any official SDK.
+
+   **Corrected 2026-08-02:** an earlier version of this file concluded the
+   format could not be changed. It can — Jesper found the setting in the
+   TurboDocx console under account settings, with richer options than the API
+   docs describe, including `Saturday, August 1st, 2026`. The mistake was
+   reasoning from the API surface and the published docs to a claim about the
+   product. The API half was right; the conclusion was not.
+
+   Two properties confirmed since:
+
+   - **Not retroactive.** Re-downloading the already-executed test document
+     after the setting changed returned a byte-identical file (same md5), so
+     the format is baked in at signing time.
+   - **Account-scoped, not request-scoped.** It applies to everything that
+     account sends and this server cannot override it per document. Machines
+     using different TurboDocx accounts need the setting applied to each.
+
+   Still unverified: how the new format actually renders on a freshly signed
+   document. That costs one signature to establish.
 
 ### The procedure, for re-running after an API change
 
