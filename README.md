@@ -289,22 +289,24 @@ change stays a one-line fix. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
 ## Architecture decisions
 
 The four decisions most likely to look like mistakes to a new reader are
-recorded as ADRs in Architrix (`repo: turbosign-mcp`, branch `main`), in force
-as of 2026-08-09:
+recorded as MADR records in [`architrix/adr/`](architrix/adr/), in force as of
+2026-08-09:
 
 | | |
 |---|---|
-| **AR-1** | Stdio transport, not HTTP in a container |
-| **AR-2** | Call the API with httpx directly, not the official SDK |
-| **AR-3** | Synchronous tools with a bounded timeout, not `task=True` |
-| **AR-4** | Environment beats stored credentials, and onboarding lives in the server |
+| [**AR-1**](architrix/adr/AR-1.md) | Stdio transport, not HTTP in a container |
+| [**AR-2**](architrix/adr/AR-2.md) | Call the API with httpx directly, not the official SDK |
+| [**AR-3**](architrix/adr/AR-3.md) | Synchronous tools with a bounded timeout, not `task=True` |
+| [**AR-4**](architrix/adr/AR-4.md) | Environment beats stored credentials, and onboarding lives in the server |
 
 Each records what was given up as well as what was gained. AR-3 in particular
 is a deliberate, documented deviation from the house MCP-server standard —
 read it before "fixing" the synchronous tools.
 
-The records live in Architrix's own store rather than in this repository; read
-them with `adr_read(repo="turbosign-mcp", branch="main")`.
+The `architrix/` directory is Architrix's namespace in this repository, per the
+ecosystem's directory-ownership convention. Edit the records through Architrix
+(`adr_create` / `adr_status` with `org="disciplin-run-org"`, then
+`github_save`), not by hand — a hand-edit will be overwritten by the next save.
 
 ## Development
 
