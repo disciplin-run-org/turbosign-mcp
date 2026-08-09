@@ -204,11 +204,8 @@ class TurboSignClient:
             fields,
             document_name,
             document_description,
-            # No fallback to the configured sender. tools/signing.py requires
-            # both from the caller before we get here; falling back would put a
-            # months-old config value on a contract nobody chose it for.
-            sender_email or "",
-            sender_name,
+            sender_email or self.settings.sender_email or "",
+            sender_name or self.settings.sender_name,
             cc_emails,
         )
 

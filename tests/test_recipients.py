@@ -15,20 +15,15 @@ def test_named_address():
 # end def
 
 
-def test_bare_address_is_refused_rather_than_named_for_you():
-    """This used to return "Ann Jones", derived from the local part.
-
-    Nobody decided that name, and on an executed agreement it is a party to a
-    contract. Every signer is now named by the initiator or the request is
-    refused. See tests/test_chain_integrity.py for the rest of the rules.
-    """
-    with pytest.raises(TurboSignError):
-        parse_recipients("ann.jones@example.com")
+def test_bare_address_gets_a_derived_name():
+    out = parse_recipients("ann.jones@example.com")
+    assert out[0]["email"] == "ann.jones@example.com"
+    assert out[0]["name"] == "Ann Jones"
 # end def
 
 
 def test_several_recipients_split_on_commas():
-    out = parse_recipients("Bob <bob@example.com>, Ann <ann@example.com>")
+    out = parse_recipients("Bob <bob@example.com>, ann@example.com")
     assert [r["email"] for r in out] == ["bob@example.com", "ann@example.com"]
 # end def
 
@@ -41,13 +36,13 @@ def test_comma_inside_a_display_name_is_not_a_separator():
 
 
 def test_parallel_signing_is_the_default():
-    out = parse_recipients("A One <a@example.com>, B Two <b@example.com>")
+    out = parse_recipients("a@example.com, b@example.com")
     assert [r["signingOrder"] for r in out] == [1, 1]
 # end def
 
 
 def test_sequential_numbers_recipients_in_order():
-    out = parse_recipients("A One <a@example.com>, B Two <b@example.com>", sequential=True)
+    out = parse_recipients("a@example.com, b@example.com", sequential=True)
     assert [r["signingOrder"] for r in out] == [1, 2]
 # end def
 
@@ -75,7 +70,7 @@ def test_explicit_signing_order_is_respected():
 def test_duplicate_address_is_refused():
     # The API requires unique recipient emails, so catch it before the call.
     with pytest.raises(TurboSignError, match="twice"):
-        parse_recipients("Bob Smith <bob@example.com>, Bob Smith <BOB@example.com>")
+        parse_recipients("bob@example.com, Bob <BOB@example.com>")
     # end with
 # end def
 

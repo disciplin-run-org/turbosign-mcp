@@ -47,48 +47,6 @@ already does this:
 Use an absolute path to `.venv/bin/turbosign-mcp` if your client does not
 resolve relative commands from the project directory.
 
-## The signing chain must be stated, never inferred
-
-The initiator names every party. Nothing is filled in for you, because a name
-that arrives by default is a party to a contract that nobody chose.
-
-```
-> send ~/contracts/nda.pdf to Bob Smith <bob@example.com> for signature
-```
-
-Four rules, each closing a different hole:
-
-| | |
-|---|---|
-| **Names are explicit** | A bare address is refused, not given a name derived from its local part. |
-| **The sender is per-send** | `sender_email` and `sender_name` are required arguments; there is no fallback to config. |
-| **Signers are allowlisted** | `TURBOSIGN_ALLOWED_SIGNERS` — environment only, so a tool call cannot widen it. |
-| **The document declares the chain** | Anchors are cross-checked against the recipients; every recipient must have a field. |
-
-They are complementary. A correct-looking name says nothing about whether
-`bob@acme-invoices.com` belongs on the agreement — that is what the allowlist
-sees. And the anchors are the only declaration in a request that the caller did
-not write at the moment of sending; they are in the document a human drafted.
-
-```bash
-export TURBOSIGN_ALLOWED_SIGNERS="@yourcompany.com, counsel@example.com"
-```
-
-**An unset allowlist refuses everything**, rather than allowing everything.
-Reading absence as permission is how a channel quietly becomes something else.
-
-### Every document needs anchors
-
-`placement="auto"` no longer falls back to measuring the page, and
-`placement="coordinates"` is refused. A document with no anchors declares
-nothing about who signs it, so there is nothing to check the recipients against.
-
-Add `{Signature1}`, `{Date1}` and so on where each party signs. You also get
-exact placement instead of boxes guessed at the foot of the last page.
-
-`turbosign_review` is held to all of the above — a rehearsal that skipped the
-checks would return a clean preview for a request that could never be sent.
-
 ## Getting credentialled
 
 Ask the agent where to start:

@@ -8,7 +8,6 @@ from fastmcp import FastMCP
 
 from ..api import TurboSignClient
 from ..config import load_settings
-from ..chain import require_allowed_signers, require_sender
 from ..errors import TurboSignError
 from ..files import resolve_document, resolve_output_path
 from ..placement import resolve_fields
@@ -107,19 +106,10 @@ def _prepare_args(
     settings = load_settings()
     settings.require()
 
-    # The chain rules run BEFORE the document is read, so a rejected request
-    # costs nothing and the error names the actual problem rather than whatever
-    # the PDF parser hit first.
-    #
-    # Both turbosign_send and turbosign_review come through here, deliberately:
-    # a rehearsal that skipped the checks would not be a rehearsal.
-    require_sender(sender_email, sender_name)
-
     path = resolve_document(file_path, settings)
     content = path.read_bytes()
 
     people = parse_recipients(recipients, sequential=sequential)
-    require_allowed_signers(people)
     built_fields, strategy = resolve_fields(
         content,
         path.name,

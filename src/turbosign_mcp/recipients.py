@@ -30,21 +30,14 @@ _UNIT = re.compile(
 )
 
 
-def _require_name(email: str) -> str:
-    """Refuse an unnamed party. Never invent one.
-
-    This used to derive a display name from the address — "ann.jones@x.com"
-    became "Ann Jones". Nobody decided that, and on an executed agreement it is
-    the name of a party to a contract. A guess from a local part is not a
-    signatory.
-    """
-    raise TurboSignError(
-        f"{email} was given without a name.",
-        'Every party must be named by the initiator: use '
-        '"Ann Jones <ann.jones@example.com>", or a JSON array of '
-        '{"name", "email"} objects. Names are no longer derived from the '
-        "address.",
-    )
+def _name_from_email(email: str) -> str:
+    """Derive a display name from an address, for when none was given."""
+    local = email.split("@", 1)[0]
+    parts = [p for p in re.split(r"[._\-+]+", local) if p]
+    if not parts:
+        return email
+    # end if
+    return " ".join(p.capitalize() for p in parts)
 # end def
 
 
@@ -64,7 +57,7 @@ def _parse_string(text: str) -> list[tuple[str, str]]:
                     'Use the form "Bob Smith <bob@example.com>".',
                 )
             # end if
-            people.append((_require_name(bare), bare))
+            people.append((_name_from_email(bare), bare))
             continue
         # end if
 
@@ -77,7 +70,7 @@ def _parse_string(text: str) -> list[tuple[str, str]]:
         # end if
         # Strip the separator left over from the preceding recipient.
         name = (match.group("name") or "").strip().strip(",;").strip().strip('"').strip()
-        people.append((name or _require_name(email), email))
+        people.append((name or _name_from_email(email), email))
     # end for
 
     if not people:
@@ -103,12 +96,12 @@ def _parse_one(chunk: str) -> tuple[str, str]:
                 'Use the form "Bob Smith <bob@example.com>".',
             )
         # end if
-        return (name or _require_name(email)), email
+        return (name or _name_from_email(email)), email
     # end if
 
     bare = chunk.strip().strip('"')
     if _EMAIL.match(bare):
-        return _require_name(bare), bare
+        return _name_from_email(bare), bare
     # end if
 
     raise TurboSignError(
@@ -187,7 +180,7 @@ def parse_recipients(value, sequential: bool = False) -> list[dict]:
                     'Every recipient needs an "email".',
                 )
             # end if
-            name = str(entry.get("name") or "").strip() or _require_name(email)
+            name = str(entry.get("name") or "").strip() or _name_from_email(email)
             people.append((name, email))
             order = entry.get("signingOrder")
             if isinstance(order, int) and order >= 1:
