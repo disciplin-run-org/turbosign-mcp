@@ -286,6 +286,26 @@ is both documented ("Vertical position from top edge") and verified against the
 live API, and it is isolated to one constant in `placement.py` so a future
 change stays a one-line fix. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
+## Architecture decisions
+
+The four decisions most likely to look like mistakes to a new reader are
+recorded as ADRs in Architrix (`repo: turbosign-mcp`, branch `main`), in force
+as of 2026-08-09:
+
+| | |
+|---|---|
+| **AR-1** | Stdio transport, not HTTP in a container |
+| **AR-2** | Call the API with httpx directly, not the official SDK |
+| **AR-3** | Synchronous tools with a bounded timeout, not `task=True` |
+| **AR-4** | Environment beats stored credentials, and onboarding lives in the server |
+
+Each records what was given up as well as what was gained. AR-3 in particular
+is a deliberate, documented deviation from the house MCP-server standard —
+read it before "fixing" the synchronous tools.
+
+The records live in Architrix's own store rather than in this repository; read
+them with `adr_read(repo="turbosign-mcp", branch="main")`.
+
 ## Development
 
 ```bash
