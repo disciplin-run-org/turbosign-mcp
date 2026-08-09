@@ -1,13 +1,13 @@
 ---
 id: AR-1
 title: Stdio transport, not HTTP in a container
-status: proposed
+status: accepted
 spec_refs: []
 paths: ["src/turbosign_mcp/server.py"]
 supersedes: null
 superseded_by: null
 created: 2026-08-09T17:45:51+00:00
-updated: 2026-08-09T17:45:51+00:00
+updated: 2026-08-09T17:47:09+00:00
 ---
 
 # AR-1: Stdio transport, not HTTP in a container
