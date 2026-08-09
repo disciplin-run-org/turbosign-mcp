@@ -162,7 +162,7 @@ async def test_sending_without_credentials_points_at_setup(isolated_home, tmp_pa
     pdf = tmp_path / "a.pdf"
     pdf.write_bytes(b"%PDF-1.4")
     result = await _call(
-        "turbosign_send", {"file_path": str(pdf), "recipients": "bob@example.com"}
+        "turbosign_send", {"file_path": str(pdf), "recipients": "Bob Smith <bob@example.com>"}
     )
     assert result["ok"] is False
     assert "turbosign_setup" in result["hint"]
@@ -295,7 +295,7 @@ async def test_send_uses_anchors_when_the_pdf_has_them(configured):
         return_value=httpx.Response(200, json={"documentId": "doc-1"})
     )
     result = await _call(
-        "turbosign_send", {"file_path": str(pdf), "recipients": "bob@example.com"}
+        "turbosign_send", {"file_path": str(pdf), "recipients": "Bob Smith <bob@example.com>"}
     )
     assert result["placement"] == "anchor"
     assert route.called
@@ -317,7 +317,7 @@ async def test_review_sends_no_emails_and_returns_a_preview(configured):
         )
     )
     result = await _call(
-        "turbosign_review", {"file_path": str(pdf), "recipients": "bob@example.com"}
+        "turbosign_review", {"file_path": str(pdf), "recipients": "Bob Smith <bob@example.com>"}
     )
     assert result["emails_sent"] is False
     assert result["preview_url"] == "https://preview.test/d1"

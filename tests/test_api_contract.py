@@ -77,6 +77,10 @@ def test_send_posts_multipart_with_stringified_json(settings):
         content=b"%PDF-1.4 fake",
         filename="nda.pdf",
         document_name="NDA",
+        # Stated explicitly: the client stopped inheriting the sender from
+        # settings, so that a months-old config value cannot end up as the
+        # reply-to on a contract. See src/turbosign_mcp/chain.py.
+        sender_email="sender@example.com",
     )
 
     request = route.calls[0].request
@@ -124,6 +128,7 @@ def test_sender_name_and_cc_are_included_when_set(settings):
         content=b"%PDF",
         filename="a.pdf",
         cc_emails=["watch@example.com"],
+        sender_name="Test Sender",
     )
     form = _multipart_fields(route.calls[0].request)
     assert form["senderName"] == "Test Sender"
