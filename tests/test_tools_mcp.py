@@ -162,7 +162,13 @@ async def test_sending_without_credentials_points_at_setup(isolated_home, tmp_pa
     pdf = tmp_path / "a.pdf"
     pdf.write_bytes(b"%PDF-1.4")
     result = await _call(
-        "turbosign_send", {"file_path": str(pdf), "recipients": "bob@example.com"}
+        "turbosign_send",
+        {
+            "file_path": str(pdf),
+            "recipients": "Bob Smith <bob@example.com>",
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
     )
     assert result["ok"] is False
     assert "turbosign_setup" in result["hint"]
@@ -246,6 +252,9 @@ def configured(isolated_home, monkeypatch, tmp_path):
     monkeypatch.setenv("TURBODOCX_SENDER_EMAIL", "sender@example.com")
     monkeypatch.setenv("TURBODOCX_BASE_URL", BASE)
     monkeypatch.setenv("TURBOSIGN_ALLOWED_DIRS", str(tmp_path))
+    # No allowlist means no send: an unconfigured allowlist refuses everything
+    # rather than allowing everything. See chain.require_allowed_signers.
+    monkeypatch.setenv("TURBOSIGN_ALLOWED_SIGNERS", "@example.com")
     return tmp_path
 # end def
 
@@ -255,7 +264,7 @@ async def test_send_reports_the_document_id_and_the_strategy_used(configured):
     from .conftest import make_pdf
 
     pdf = configured / "nda.pdf"
-    pdf.write_bytes(make_pdf("Agreement with no anchors"))
+    pdf.write_bytes(make_pdf("Agreement. Sign here: {Signature1}"))
 
     respx.post(f"{BASE}/turbosign/single/prepare-for-signing").mock(
         return_value=httpx.Response(
@@ -274,11 +283,16 @@ async def test_send_reports_the_document_id_and_the_strategy_used(configured):
 
     result = await _call(
         "turbosign_send",
-        {"file_path": str(pdf), "recipients": "Bob <bob@example.com>"},
+        {
+            "file_path": str(pdf),
+            "recipients": "Bob Smith <bob@example.com>",
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
     )
     assert result["ok"] is True
     assert result["document_id"] == "doc-9"
-    assert result["placement"] == "coordinates"
+    assert result["placement"] == "anchor"
     assert result["emails_sent"] is True
     assert result["recipients"][0]["id"] == "r1"
 # end def
@@ -295,7 +309,13 @@ async def test_send_uses_anchors_when_the_pdf_has_them(configured):
         return_value=httpx.Response(200, json={"documentId": "doc-1"})
     )
     result = await _call(
-        "turbosign_send", {"file_path": str(pdf), "recipients": "bob@example.com"}
+        "turbosign_send",
+        {
+            "file_path": str(pdf),
+            "recipients": "Bob Smith <bob@example.com>",
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
     )
     assert result["placement"] == "anchor"
     assert route.called
@@ -307,7 +327,7 @@ async def test_review_sends_no_emails_and_returns_a_preview(configured):
     from .conftest import make_pdf
 
     pdf = configured / "nda.pdf"
-    pdf.write_bytes(make_pdf("no anchors"))
+    pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
 
     respx.post(f"{BASE}/turbosign/single/prepare-for-review").mock(
         return_value=httpx.Response(
@@ -317,7 +337,13 @@ async def test_review_sends_no_emails_and_returns_a_preview(configured):
         )
     )
     result = await _call(
-        "turbosign_review", {"file_path": str(pdf), "recipients": "bob@example.com"}
+        "turbosign_review",
+        {
+            "file_path": str(pdf),
+            "recipients": "Bob Smith <bob@example.com>",
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
     )
     assert result["emails_sent"] is False
     assert result["preview_url"] == "https://preview.test/d1"
@@ -438,4 +464,118 @@ async def test_an_api_error_comes_back_as_guidance_not_a_traceback(configured):
     result = await _call("turbosign_status", {"document_id": "d1"})
     assert result["ok"] is False
     assert result["hint"]
+# end def
+
+
+# ── the chain rules, exercised through the tool surface ──────────────────────
+#
+# tests/test_chain_integrity.py proves each rule in isolation. These prove they
+# are actually WIRED — a rule that is never called is the same as no rule, and
+# that failure mode looks identical to a passing unit test.
+#
+# Every one of these asserts the request was refused BEFORE any HTTP call. No
+# respx route is registered, so if a request escaped, it would error on the
+# unmocked call rather than pass quietly.
+
+
+@respx.mock
+async def test_send_refuses_an_unnamed_recipient(configured):
+    from .conftest import make_pdf
+
+    pdf = configured / "nda.pdf"
+    pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
+    result = await _call(
+        "turbosign_send",
+        {
+            "file_path": str(pdf),
+            "recipients": "bob@example.com",          # no name
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
+    )
+    assert result["ok"] is False
+    assert "name" in str(result).lower()
+# end def
+
+
+@respx.mock
+async def test_send_refuses_a_signer_off_the_allowlist(configured):
+    """A fully named stranger at a lookalike domain — what naming cannot see."""
+    from .conftest import make_pdf
+
+    pdf = configured / "nda.pdf"
+    pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
+    result = await _call(
+        "turbosign_send",
+        {
+            "file_path": str(pdf),
+            "recipients": "Bob Smith <bob@example-invoices.com>",
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
+    )
+    assert result["ok"] is False
+    assert "allowlist" in str(result).lower()
+# end def
+
+
+@respx.mock
+async def test_send_refuses_a_recipient_the_document_does_not_name(configured):
+    """Two signature blocks, three people. The third would have nothing to sign."""
+    from .conftest import make_pdf
+
+    pdf = configured / "nda.pdf"
+    pdf.write_bytes(make_pdf("A: {Signature1}  B: {Signature2}"))
+    result = await _call(
+        "turbosign_send",
+        {
+            "file_path": str(pdf),
+            "recipients": ("A One <a@example.com>, B Two <b@example.com>, "
+                           "C Three <c@example.com>"),
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
+    )
+    assert result["ok"] is False
+    assert "anchor" in str(result).lower()
+# end def
+
+
+@respx.mock
+async def test_send_refuses_a_missing_sender(configured):
+    from .conftest import make_pdf
+
+    pdf = configured / "nda.pdf"
+    pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
+    result = await _call(
+        "turbosign_send",
+        {"file_path": str(pdf), "recipients": "Bob Smith <bob@example.com>"},
+    )
+    assert result["ok"] is False
+    assert "sender" in str(result).lower()
+# end def
+
+
+@respx.mock
+async def test_review_is_held_to_the_same_rules(configured):
+    """The rehearsal must exercise every check the send does.
+
+    A review that skipped validation would return a clean preview for a request
+    that could never be sent — which is worse than no rehearsal, because it
+    reads as approval.
+    """
+    from .conftest import make_pdf
+
+    pdf = configured / "nda.pdf"
+    pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
+    result = await _call(
+        "turbosign_review",
+        {
+            "file_path": str(pdf),
+            "recipients": "bob@example.com",          # no name
+            "sender_email": "sender@example.com",
+            "sender_name": "Test Sender",
+        },
+    )
+    assert result["ok"] is False
 # end def

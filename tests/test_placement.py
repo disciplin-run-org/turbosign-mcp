@@ -71,23 +71,32 @@ def test_anchor_for_a_recipient_who_was_not_listed_is_an_error(anchored_pdf):
 # end def
 
 
-# -- auto: geometry when there are no anchors -----------------------------
+# -- auto: an unanchored document is refused, not measured ----------------
 
 
-def test_auto_falls_back_to_coordinates(plain_pdf, two_recipients):
-    fields, strategy = resolve_fields(
-        plain_pdf, "a.pdf", two_recipients, placement="auto"
-    )
-    assert strategy == "coordinates"
-    assert {f["type"] for f in fields} == {"signature", "date"}
-    assert len(fields) == 4  # signature + date, per recipient
+def test_auto_refuses_a_document_with_no_anchors(plain_pdf, two_recipients):
+    """This used to fall back to geometry and send.
+
+    A document positioned by measurement declares nothing about who signs it,
+    so the recipient list cannot be checked against anything. That is the hole
+    the fallback left open, and it is why it is gone.
+    """
+    with pytest.raises(TurboSignError) as exc:
+        resolve_fields(plain_pdf, "a.pdf", two_recipients, placement="auto")
+    assert "anchor" in str(exc.value).lower()
 # end def
 
 
-def test_coordinate_fields_land_on_the_last_page(two_recipients):
+def test_coordinates_placement_is_refused_by_name(two_recipients):
+    """Rejected explicitly rather than left to fail later as "no anchors".
+
+    An error naming the mode the caller asked for is the difference between a
+    decision and a bug.
+    """
     pdf = make_pdf("no anchors here", pages=3)
-    fields, _ = resolve_fields(pdf, "a.pdf", two_recipients, placement="coordinates")
-    assert {f["page"] for f in fields} == {3}
+    with pytest.raises(TurboSignError) as exc:
+        resolve_fields(pdf, "a.pdf", two_recipients, placement="coordinates")
+    assert "coordinates" in str(exc.value)
 # end def
 
 

@@ -330,6 +330,23 @@ def resolve_fields(
         )
     # end if
 
+    if placement == "coordinates":
+        # Geometry placement is gone as a routing option. A document positioned
+        # by measurement declares nothing about WHO signs it, so the recipient
+        # list cannot be checked against anything — and an unchecked chain is
+        # what this server now refuses to send. Rejected by name rather than
+        # left to fail later with "no anchors", which would read as a bug.
+        #
+        # build_coordinate_fields itself is retained and still unit-tested, but
+        # nothing reaches it; delete it if that stays true.
+        raise TurboSignError(
+            "placement='coordinates' is no longer available.",
+            "Signature boxes must come from anchors in the document — add "
+            "tokens like {Signature1} and {Date1} — so the recipients can be "
+            "checked against what the document says.",
+        )
+    # end if
+
     if anchor:
         # A single named anchor, one per recipient in order.
         built = build_anchor_fields([anchor], recipients)
@@ -361,12 +378,21 @@ def resolve_fields(
                 "placement='auto' to fall back to automatic positioning.",
             )
         # end if
+        from .chain import require_anchor_coverage  # local: avoids an import cycle
+
+        require_anchor_coverage(tokens, recipients)
         return build_anchor_fields(tokens, recipients), "anchor"
     # end if
 
-    if placement == "auto" and tokens:
-        return build_anchor_fields(tokens, recipients), "anchor"
-    # end if
+    # placement="auto" no longer falls back to geometry. A document with no
+    # anchors declares nothing about who signs it, so there is nothing to check
+    # the recipient list against — and an unchecked chain is the whole thing
+    # this server is trying not to send. See chain.require_anchor_coverage.
+    #
+    # build_coordinate_fields survives for callers that pass explicit fields;
+    # it is simply no longer reachable by omission.
+    from .chain import require_anchor_coverage  # local: avoids an import cycle
 
-    return build_coordinate_fields(content, recipients), "coordinates"
+    require_anchor_coverage(tokens, recipients)
+    return build_anchor_fields(tokens, recipients), "anchor"
 # end def

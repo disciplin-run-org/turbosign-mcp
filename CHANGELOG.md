@@ -4,6 +4,55 @@ What changed, for the person using this — not the person reading git history.
 
 ## Unreleased
 
+### The signing chain must be stated, never inferred — BREAKING
+
+A signature request names the parties to a legal instrument. Every convenience
+that let one of those names arrive by default was a way for the wrong person to
+end up on a contract without anyone choosing it — and where an agent drives this
+server, "nobody chose it" includes "the model chose it".
+
+Four things changed, and each closes a different hole.
+
+**Names are explicit.** A bare address is refused instead of being given a name
+derived from its local part. `ann.jones@example.com` used to become "Ann Jones";
+nobody decided that, and on an executed agreement it is the name of a party.
+Pass `"Ann Jones <ann.jones@example.com>"` or a JSON array with names.
+
+**The sender is per-send.** `sender_email` and `sender_name` are now required
+arguments and no longer fall back to the configured values. The reply-to on a
+signature request is where a counterparty's objection lands; it should be a
+decision visible in the call, not a value inherited from a config file written
+months ago.
+
+**Signers must be on an allowlist.** Set `TURBOSIGN_ALLOWED_SIGNERS` to the
+addresses or domains permitted to sign — `"@yourcompany.com, counsel@example.com"`.
+Read from the environment only, so a tool call cannot widen it. An unset
+allowlist refuses everything rather than allowing everything: reading absence as
+permission is how a channel becomes a command channel.
+
+This is the check that sees a lookalike domain. A well-formed name tells you
+nothing about whether `bob@acme-invoices.com` belongs on the agreement.
+
+**The document declares the chain.** Anchors are cross-checked against the
+recipients: every recipient must have a field. The server already refused more
+anchors than recipients; the reverse — an extra party on a contract whose
+signature blocks do not mention them — is the direction an agent could produce,
+and that party would receive the email with nothing to sign.
+
+This is the only declaration in a request that the caller did not write at the
+moment of sending. It is in the document a human drafted.
+
+**Consequently, geometry placement is gone.** `placement="auto"` no longer falls
+back to measuring the page, and `placement="coordinates"` is refused by name. A
+document with no anchors declares nothing about who signs it, so there is
+nothing to check the recipient list against. Documents need `{Signature1}`-style
+tokens — which also gives exact field placement rather than boxes guessed at the
+foot of the last page.
+
+`turbosign_review` is held to every one of these rules. A rehearsal that skipped
+validation would return a clean preview for a request that could never be sent,
+which is worse than no rehearsal because it reads as approval.
+
 **Verified end to end against the live service.** A real two-signer agreement
 went out, was signed in order, came back executed and was downloaded — every
 tool in the server has now been exercised against production, not just against
