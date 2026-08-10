@@ -120,6 +120,61 @@ async def test_instructions_warn_about_the_ambiguous_default_date_format():
 # end def
 
 
+async def test_the_recipient_example_in_the_instructions_actually_parses():
+    """The instructions' own worked example must survive the parser.
+
+    This is the drift-catcher. When the chain rules landed, SERVER_INSTRUCTIONS
+    still advertised "Bob Smith <bob@example.com>, ann@example.com" — an
+    example the new parser refuses, in the text every consumer inherits. A
+    Hermes agent followed it and hit the wall. Tying the example to the code
+    means the next such change breaks a test instead of a user.
+    """
+    from turbosign_mcp.recipients import parse_recipients
+
+    example = "Bob Smith <bob@example.com>, Ann Jones <ann@example.com>"
+    text = await _call("get_instructions", {})
+    assert example in text, "the documented example changed without this test"
+    parsed = parse_recipients(example)
+    assert [r["email"] for r in parsed] == ["bob@example.com", "ann@example.com"]
+# end def
+
+
+async def test_instructions_do_not_promise_a_geometry_fallback():
+    # The fallback was removed. Instructions promising it send the agent
+    # looking for a mode that no longer exists.
+    text = await _call("get_instructions", {})
+    assert "foot of the last page" not in text
+    assert "any other PDF still works" not in text
+    assert "NO automatic placement by geometry" in text
+# end def
+
+
+async def test_instructions_state_every_chain_rule():
+    # All four are refusals an agent will hit. Two of them — the allowlist and
+    # the per-send sender — it cannot discover from the tool schema alone.
+    text = await _call("get_instructions", {})
+    for rule in (
+        "NAMES ARE EXPLICIT",
+        "THE SENDER IS PER-SEND",
+        "TURBOSIGN_ALLOWED_SIGNERS",
+        "THE DOCUMENT DECLARES THE CHAIN",
+    ):
+        assert rule in text, f"instructions do not mention {rule}"
+    # end for
+# end def
+
+
+async def test_instructions_cover_a_document_with_printed_signature_lines():
+    # The case Hermes reported: a PDF with a visible signature block but no
+    # anchor tokens. It is now refused, so the agent needs to know to check
+    # before calling, and that the fix is in the source document.
+    text = await _call("get_instructions", {})
+    assert "BEFORE CALLING review OR send" in text
+    assert "signature block" in text
+    assert "add the anchors to the document the PDF was exported" in text
+# end def
+
+
 async def test_instructions_tell_hosts_to_gate_send_but_not_review():
     text = await _call("get_instructions", {})
     assert "human approval" in text

@@ -52,11 +52,13 @@ request is also irreversible). Leave turbosign_review ungated — it is the safe
 rehearsal, and gating it removes the reason to prefer it.
 
 RECOMMENDED WORKFLOW
-1. turbosign_review(file_path, recipients) — prepares the document and returns
-   a preview URL WITHOUT emailing anyone. Do this the first time you send a
-   new kind of document, and look at where the signature boxes landed.
-2. turbosign_send(file_path, recipients) — the same call that actually emails
-   the recipients. Keep the document_id it returns.
+1. turbosign_review(file_path, recipients, sender_email, sender_name) —
+   prepares the document and returns a preview URL WITHOUT emailing anyone. Do
+   this the first time you send a new kind of document, and look at where the
+   signature boxes landed. It is held to every chain rule below, deliberately:
+   a rehearsal that skipped the checks would not be a rehearsal.
+2. turbosign_send(file_path, recipients, sender_email, sender_name) — the same
+   call that actually emails the recipients. Keep the document_id it returns.
 3. turbosign_status(document_id) — has anyone signed yet.
 4. turbosign_download(document_id, output_path) — once complete, fetch the
    signed PDF.
@@ -65,16 +67,42 @@ Also: turbosign_void (cancel, reason required), turbosign_resend (chase a
 recipient — get their id from turbosign_status), turbosign_audit_trail (who
 opened it, and when).
 
-PLACEMENT — where the signature boxes go. By default (placement="auto") the
-server reads the PDF: if it finds anchor text like {Signature1} or {Date1} it
-puts the fields exactly there; if it does not, it places a signature and date
-box per recipient at the foot of the last page. A document written with anchors
-gets exact placement for free, and any other PDF still works. The response
-always says which strategy was used.
+THE SIGNING CHAIN MUST BE STATED, NEVER INFERRED. A signature request names
+the parties to a legal instrument, so nothing about who signs is filled in for
+you. Four rules, and a request that breaks any of them is refused before the
+document is even read:
 
-RECIPIENTS — "Bob Smith <bob@example.com>, ann@example.com" is enough. By
-default everyone can sign at once; pass sequential=true to make them sign in
-the order listed.
+  1. NAMES ARE EXPLICIT. "Bob Smith <bob@example.com>" — a bare address is
+     refused rather than given a name guessed from its local part. On an
+     executed agreement that guess would be the name of a party.
+  2. THE SENDER IS PER-SEND. sender_email and sender_name are required
+     arguments on every review and send. There is no fallback to configuration.
+  3. SIGNERS ARE ALLOWLISTED. TURBOSIGN_ALLOWED_SIGNERS, read from the
+     environment only, so no tool call can widen it. Unset refuses everything
+     rather than allowing everything. If you hit this, ask the human — you
+     cannot fix it yourself, by design.
+  4. THE DOCUMENT DECLARES THE CHAIN. Every document needs {Signature1}-style
+     anchors, and they are cross-checked against the recipients.
+
+PLACEMENT — the document must carry anchor text like {Signature1} and {Date1}
+where each party signs. placement="auto" finds them and puts the fields exactly
+there. There is NO automatic placement by geometry: a document that declares
+nothing about who signs it cannot be checked against the recipient list, so an
+unanchored document is refused rather than guessed at. placement="coordinates"
+is refused by name for the same reason.
+
+BEFORE CALLING review OR send, check the document for anchors. If it has a
+signature block — "Signature: ______", a printed line, anything a reader would
+expect to sign on — but no {Signature1} tokens, the request will be refused.
+Fix it at the source: add the anchors to the document the PDF was exported
+from, since anchors have to be real extractable text and usually cannot be
+added to a finished PDF. Failing that, pass explicit fields with
+page/x/y/width/height. Do not go looking for a geometry fallback; there isn't
+one any more.
+
+RECIPIENTS — "Bob Smith <bob@example.com>, Ann Jones <ann@example.com>". Every
+recipient needs a name AND an address. By default everyone can sign at once;
+pass sequential=true to make them sign in the order listed.
 
 DATES — a date field renders in the SENDING ACCOUNT's configured format, and
 the default is US-style: 08/01/2026 means 1 August 2026, which a day-first
