@@ -8,3 +8,6 @@
 {"ts": "2026-08-09T17:47:26.852722Z", "repo": "turbosign-mcp", "branch": "main", "item_id": "AR-4", "field": "status", "old_value": "proposed", "new_value": "accepted", "source": "architrix", "user": "architrix"}
 {"ts": "2026-08-13T21:20:45.553903Z", "repo": "turbosign-mcp", "branch": "main", "item_id": "AR-5", "field": "status", "old_value": "proposed", "new_value": "accepted", "source": "architrix", "user": "architrix"}
 {"ts": "2026-08-13T21:20:52.853485Z", "repo": "turbosign-mcp", "branch": "main", "item_id": "AR-6", "field": "status", "old_value": "proposed", "new_value": "accepted", "source": "architrix", "user": "architrix"}
+{"ts": "2026-08-13T21:42:34.301844Z", "repo": "turbosign-mcp", "branch": "main", "item_id": "AR-7", "field": "status", "old_value": "", "new_value": "proposed", "source": "architrix", "user": "architrix"}
+{"ts": "2026-08-13T21:42:40.681054Z", "repo": "turbosign-mcp", "branch": "main", "item_id": "AR-7", "field": "status", "old_value": "proposed", "new_value": "accepted", "source": "architrix", "user": "architrix"}
+{"ts": "2026-08-13T21:42:52.456922Z", "repo": "turbosign-mcp", "branch": "main", "item_id": "AR-5", "field": "superseded_by", "old_value": "", "new_value": "AR-7", "source": "architrix", "user": "architrix"}

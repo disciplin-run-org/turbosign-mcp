@@ -1,13 +1,13 @@
 ---
 id: AR-5
 title: The signing chain is stated, never inferred
-status: accepted
+status: superseded
 spec_refs: []
 paths: ["src/turbosign_mcp/chain.py", "src/turbosign_mcp/recipients.py", "src/turbosign_mcp/tools/signing.py"]
 supersedes: null
-superseded_by: null
+superseded_by: AR-7
 created: 2026-08-13T21:20:15+00:00
-updated: 2026-08-13T21:20:45+00:00
+updated: 2026-08-13T21:42:52+00:00
 ---
 
 # AR-5: The signing chain is stated, never inferred
