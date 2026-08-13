@@ -371,6 +371,8 @@ recorded as MADR records in [`architrix/adr/`](architrix/adr/), in force as of
 | [**AR-2**](architrix/adr/AR-2.md) | Call the API with httpx directly, not the official SDK |
 | [**AR-3**](architrix/adr/AR-3.md) | Synchronous tools with a bounded timeout, not `task=True` |
 | [**AR-4**](architrix/adr/AR-4.md) | Environment beats stored credentials, and onboarding lives in the server |
+| [**AR-5**](architrix/adr/AR-5.md) | The signing chain is stated, never inferred |
+| [**AR-6**](architrix/adr/AR-6.md) | Inline text anchors are the only placement mechanism |
 
 Each records what was given up as well as what was gained. AR-3 in particular
 is a deliberate, documented deviation from the house MCP-server standard —
