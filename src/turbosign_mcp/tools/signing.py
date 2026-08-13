@@ -95,9 +95,6 @@ def _prepare_args(
     recipients,
     document_name: str,
     document_description: str,
-    placement: str,
-    fields,
-    anchor: str,
     sequential: bool,
     cc_emails,
     sender_email: str,
@@ -120,14 +117,7 @@ def _prepare_args(
 
     people = parse_recipients(recipients, sequential=sequential)
     require_allowed_signers(people)
-    built_fields, strategy = resolve_fields(
-        content,
-        path.name,
-        people,
-        placement=placement,
-        fields=fields,
-        anchor=anchor or None,
-    )
+    built_fields, strategy = resolve_fields(content, path.name, people)
 
     cc: list[str] | None = None
     if cc_emails:
@@ -163,35 +153,34 @@ def register_tools(mcp: FastMCP) -> None:
     def turbosign_send(
         file_path: str,
         recipients: str,
+        sender_email: str,
+        sender_name: str,
         document_name: str = "",
         document_description: str = "",
-        placement: Literal["auto", "anchor", "coordinates", "explicit"] = "auto",
-        fields: str = "",
-        anchor: str = "",
         sequential: bool = False,
         cc_emails: str = "",
-        sender_email: str = "",
-        sender_name: str = "",
     ) -> dict:
         """Send a document out for signature. This emails the recipients.
 
         THERE IS NO SANDBOX — TurboSign has one environment and it is
         production. This reaches a real inbox and cannot be recalled, only
-        voided. On a new machine, new document layout or new account, run
-        turbosign_whoami(verify=True) then turbosign_review() first, and make
-        your first real send to your own address.
+        voided. Run turbosign_review() first; it takes these exact arguments
+        and emails nobody.
 
-        turbosign_review() takes these exact arguments and emails nobody.
+        THE DOCUMENT SAYS WHERE PEOPLE SIGN. It must carry inline text anchors
+        — {Signature1}, {Date1}, {Signature2}, {Date2} — placed where each
+        party signs. There is no placement argument and no coordinates: a PDF
+        with no anchors is refused rather than guessed at. Call
+        get_instructions() for the layout that works, including putting the
+        anchor above the signature rule and colouring it white.
 
-        file_path: absolute path to a PDF (DOCX and PPTX also work, but only
-            with an explicit anchor or fields, since they cannot be measured).
-        recipients: "Bob Smith <bob@example.com>, ann@example.com", or a JSON
-            array of {name, email} objects.
-        placement: "auto" reads the document, uses {Signature1}-style anchors
-            if they are there, and otherwise places a signature and date box
-            per recipient at the foot of the last page. "anchor" requires
-            anchors. "coordinates" forces automatic positioning. "explicit"
-            requires a fields array.
+        file_path: absolute path to a PDF that already contains the anchors.
+        recipients: "Bob Smith <bob@example.com>, Ann Jones <ann@example.com>".
+            Every recipient needs a name and an address; nothing is defaulted.
+            Recipient N in this list signs at {SignatureN}/{DateN}.
+        sender_email / sender_name: required, every time. Never taken from
+            configuration — the reply-to on a binding request is a per-send
+            decision.
         sequential: false (default) lets everyone sign at once; true makes
             them sign in the order listed.
 
@@ -200,8 +189,7 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             settings, strategy, kwargs = _prepare_args(
                 file_path, recipients, document_name, document_description,
-                placement, fields or None, anchor, sequential, cc_emails,
-                sender_email, sender_name,
+                sequential, cc_emails, sender_email, sender_name,
             )
             body = TurboSignClient(settings).prepare_for_signing(**kwargs)
         except TurboSignError as exc:
@@ -214,29 +202,28 @@ def register_tools(mcp: FastMCP) -> None:
     def turbosign_review(
         file_path: str,
         recipients: str,
+        sender_email: str,
+        sender_name: str,
         document_name: str = "",
         document_description: str = "",
-        placement: Literal["auto", "anchor", "coordinates", "explicit"] = "auto",
-        fields: str = "",
-        anchor: str = "",
         sequential: bool = False,
         cc_emails: str = "",
-        sender_email: str = "",
-        sender_name: str = "",
     ) -> dict:
         """Prepare a document and get a preview URL WITHOUT emailing anyone.
 
-        Same arguments as turbosign_send. Use this to check where the
-        signature boxes landed before committing to a real send — open the
-        returned preview_url in a browser and look.
+        Same arguments as turbosign_send, and held to the same rules — a
+        rehearsal that skipped the checks would not be a rehearsal.
 
-        Worth doing the first time you send a particular kind of document.
+        Open the returned preview_url and LOOK at where each signature landed
+        before sending. Anchors put the field where the author put the token,
+        so a mistake here is a mistake in the document, and this is where you
+        catch it: a wrong anchor number swaps who signs where and the document
+        still sends perfectly happily.
         """
         try:
             settings, strategy, kwargs = _prepare_args(
                 file_path, recipients, document_name, document_description,
-                placement, fields or None, anchor, sequential, cc_emails,
-                sender_email, sender_name,
+                sequential, cc_emails, sender_email, sender_name,
             )
             body = TurboSignClient(settings).prepare_for_review(**kwargs)
         except TurboSignError as exc:

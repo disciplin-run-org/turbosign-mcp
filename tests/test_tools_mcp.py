@@ -78,13 +78,33 @@ async def test_refresh_tools_does_not_expose_ctx_as_an_argument():
 # end def
 
 
-async def test_placement_choices_are_visible_in_the_schema():
+async def test_the_schema_offers_no_way_to_place_a_field():
+    # Anchors in the document are the only mechanism. A placement mode or a
+    # fields array in the schema is an invitation to compute a position, which
+    # is what put signatures in the wrong place roughly ten times.
     async with Client(mcp) as client:
         tool = next(t for t in await client.list_tools() if t.name == "turbosign_send")
     # end with
-    schema = json.dumps(tool.inputSchema)
-    for mode in ("auto", "anchor", "coordinates", "explicit"):
-        assert mode in schema
+    properties = set(tool.inputSchema.get("properties", {}))
+    for gone in ("placement", "fields", "anchor"):
+        assert gone not in properties, f"{gone} is back in the tool schema"
+    # end for
+# end def
+
+
+async def test_the_sender_is_required_by_the_schema_itself():
+    # Stronger than validating it in the body: a required argument shows up in
+    # the tool schema the model reads, so the call is unlikely to be made
+    # wrong in the first place.
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+    # end with
+    for name in ("turbosign_send", "turbosign_review"):
+        required = set(tools[name].inputSchema.get("required", []))
+        assert {"sender_email", "sender_name"} <= required, (
+            f"{name} does not require the sender"
+        )
+        assert {"file_path", "recipients"} <= required
     # end for
 # end def
 
@@ -145,7 +165,21 @@ async def test_instructions_do_not_promise_a_geometry_fallback():
     text = await _call("get_instructions", {})
     assert "foot of the last page" not in text
     assert "any other PDF still works" not in text
-    assert "NO automatic placement by geometry" in text
+    assert "no placement argument, no" in text
+    assert "no fallback to look for" in text
+# end def
+
+
+async def test_instructions_teach_the_anchor_layout():
+    # The layout IS the product knowledge here — an agent that anchors a
+    # document wrongly produces a plausible-looking agreement signed in the
+    # wrong place. Served from placement.ANCHOR_GUIDANCE so the instructions
+    # and the refusal message cannot disagree.
+    from turbosign_mcp.placement import ANCHOR_GUIDANCE
+
+    text = await _call("get_instructions", {})
+    assert ANCHOR_GUIDANCE in text, "the anchor guidance is not being served"
+    assert "__ANCHOR_GUIDANCE__" not in text, "the placeholder was never filled"
 # end def
 
 
@@ -171,7 +205,7 @@ async def test_instructions_cover_a_document_with_printed_signature_lines():
     text = await _call("get_instructions", {})
     assert "BEFORE CALLING review OR send" in text
     assert "signature block" in text
-    assert "add the anchors to the document the PDF was exported" in text
+    assert "fix the SOURCE document" in text
 # end def
 
 
@@ -597,17 +631,27 @@ async def test_send_refuses_a_recipient_the_document_does_not_name(configured):
 
 
 @respx.mock
-async def test_send_refuses_a_missing_sender(configured):
+async def test_send_refuses_a_blank_sender(configured):
+    # Omitting the argument entirely is now caught by the schema (see
+    # test_the_sender_is_required_by_the_schema_itself). Passing it EMPTY is
+    # the case that still reaches our code, and it has to explain itself
+    # rather than quietly sending as nobody.
     from .conftest import make_pdf
 
     pdf = configured / "nda.pdf"
     pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
     result = await _call(
         "turbosign_send",
-        {"file_path": str(pdf), "recipients": "Bob Smith <bob@example.com>"},
+        {
+            "file_path": str(pdf),
+            "recipients": "Bob Smith <bob@example.com>",
+            "sender_email": "",
+            "sender_name": "",
+        },
     )
     assert result["ok"] is False
     assert "sender" in str(result).lower()
+    assert "per-send decision" in result["hint"]
 # end def
 
 

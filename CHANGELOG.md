@@ -4,6 +4,35 @@ What changed, for the person using this — not the person reading git history.
 
 ## Unreleased
 
+**Anchors are now the only way a signature gets placed, and the server teaches
+you how to write them.**
+
+Roughly ten signatures landed in the wrong place on a real agreement before it
+was corrected by hand. Every one was a position worked out by something that
+could not see the page. So the guessing is gone: no `placement` argument, no
+coordinates, no `fields` array. The document carries `{Signature1}` /`{Date1}`
+tokens where each party signs, or the request is refused.
+
+Ask for `get_instructions()` and you now get the layout that actually works —
+anchor above the signature rule (TurboSign draws downward, so an anchor on the
+rule pushes the signature below it), coloured white so nobody sees it, signature
+left and date right, and the number matching the signer's position in your
+recipients list rather than their position on the page. A document with no
+anchors gets that same guidance back in the error, and if it already prints
+"Signature: ______" somewhere the error says so and tells you to put the anchors
+there.
+
+**The catch, stated plainly:** a PDF you cannot edit can no longer be sent.
+Anchors have to be real text, so they go into the source document and you
+re-export.
+
+**Nothing about a signer is defaulted any more.** `sender_email` and
+`sender_name` are required by the tool schema itself, so a caller cannot leave
+them out and inherit a months-old config value; every recipient needs an
+explicit name and address.
+
+## Unreleased
+
 ### The signing chain must be stated, never inferred — BREAKING
 
 A signature request names the parties to a legal instrument. Every convenience

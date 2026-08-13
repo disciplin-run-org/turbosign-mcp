@@ -1,15 +1,20 @@
-"""Field placement — anchors when they exist, geometry when they do not."""
+"""Placement: inline text anchors, and nothing else.
+
+There is no geometry and no caller-supplied coordinates. Every placement this
+server got wrong in practice was a position computed by something that could
+not see the page, so the document is now the only thing that decides.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from turbosign_mcp import placement
 from turbosign_mcp.errors import TurboSignError
 from turbosign_mcp.placement import (
-    build_coordinate_fields,
+    ANCHOR_GUIDANCE,
+    build_anchor_fields,
     find_anchors,
-    page_geometry,
+    find_signature_hints,
     resolve_fields,
 )
 
@@ -34,21 +39,22 @@ def test_anchor_matching_is_case_insensitive():
 # end def
 
 
-# -- auto: anchors win when present ---------------------------------------
+# -- anchors are the only mechanism ---------------------------------------
 
 
-def test_auto_uses_anchors_when_the_document_has_them(anchored_pdf, two_recipients):
-    fields, strategy = resolve_fields(
-        anchored_pdf, "a.pdf", two_recipients, placement="auto"
-    )
+def test_anchors_place_the_fields(anchored_pdf, two_recipients):
+    fields, strategy = resolve_fields(anchored_pdf, "a.pdf", two_recipients)
     assert strategy == "anchor"
-    assert all("template" in f for f in fields)
-    assert fields[0]["template"]["anchor"] == "{Signature1}"
+    assert all("template" in f for f in fields), "every field must be anchor-bound"
+    assert not any("x" in f or "y" in f for f in fields), "no coordinates anywhere"
 # end def
 
 
-def test_anchor_index_selects_the_recipient(anchored_pdf, two_recipients):
-    fields, _ = resolve_fields(anchored_pdf, "a.pdf", two_recipients, placement="auto")
+def test_the_anchor_number_selects_the_recipient(anchored_pdf, two_recipients):
+    # The number is the signer's position in the recipients list. In a real
+    # agreement the counter-signing party often appears FIRST on the page, so
+    # document order and signer order routinely disagree.
+    fields, _ = resolve_fields(anchored_pdf, "a.pdf", two_recipients)
     by_anchor = {f["template"]["anchor"]: f["recipientEmail"] for f in fields}
     assert by_anchor["{Signature1}"] == "bob@example.com"
     assert by_anchor["{Signature2}"] == "ann@example.com"
@@ -56,152 +62,82 @@ def test_anchor_index_selects_the_recipient(anchored_pdf, two_recipients):
 
 
 def test_anchor_kind_maps_to_field_type(anchored_pdf, two_recipients):
-    fields, _ = resolve_fields(anchored_pdf, "a.pdf", two_recipients, placement="auto")
+    fields, _ = resolve_fields(anchored_pdf, "a.pdf", two_recipients)
     types = {f["template"]["anchor"]: f["type"] for f in fields}
     assert types["{Signature1}"] == "signature"
     assert types["{Date1}"] == "date"
 # end def
 
 
-def test_anchor_for_a_recipient_who_was_not_listed_is_an_error(anchored_pdf):
-    one = [{"name": "Bob", "email": "bob@example.com", "signingOrder": 1}]
-    with pytest.raises(TurboSignError, match="only 1 recipient"):
-        resolve_fields(anchored_pdf, "a.pdf", one, placement="auto")
-    # end with
+def test_resolve_fields_takes_no_placement_or_fields_argument():
+    # The narrowing is the point: if these come back, geometry comes back with
+    # them. build_coordinate_fields was reachable through fields= before.
+    import inspect
+
+    params = set(inspect.signature(resolve_fields).parameters)
+    assert params == {"content", "filename", "recipients"}
 # end def
 
 
-# -- auto: an unanchored document is refused, not measured ----------------
+def test_the_geometry_engine_is_gone_entirely():
+    # Not merely unrouted. It was demonstrably reachable by handing its own
+    # output back in as explicit fields, which made refusing "coordinates"
+    # cosmetic.
+    import turbosign_mcp.placement as p
 
-
-def test_auto_refuses_a_document_with_no_anchors(plain_pdf, two_recipients):
-    """This used to fall back to geometry and send.
-
-    A document positioned by measurement declares nothing about who signs it,
-    so the recipient list cannot be checked against anything. That is the hole
-    the fallback left open, and it is why it is gone.
-    """
-    with pytest.raises(TurboSignError) as exc:
-        resolve_fields(plain_pdf, "a.pdf", two_recipients, placement="auto")
-    assert "anchor" in str(exc.value).lower()
-# end def
-
-
-def test_coordinates_placement_is_refused_by_name(two_recipients):
-    """Rejected explicitly rather than left to fail later as "no anchors".
-
-    An error naming the mode the caller asked for is the difference between a
-    decision and a bug.
-    """
-    pdf = make_pdf("no anchors here", pages=3)
-    with pytest.raises(TurboSignError) as exc:
-        resolve_fields(pdf, "a.pdf", two_recipients, placement="coordinates")
-    assert "coordinates" in str(exc.value)
-# end def
-
-
-def test_coordinate_fields_satisfy_the_api_validation_rule(two_recipients):
-    # The API rejects anything where x+width > pageWidth or y+height > pageHeight.
-    pdf = make_pdf("", pages=1)
-    fields = build_coordinate_fields(pdf, two_recipients)
-    for field in fields:
-        assert field["x"] >= 0
-        assert field["y"] >= 0
-        assert field["x"] + field["width"] <= field["pageWidth"]
-        assert field["y"] + field["height"] <= field["pageHeight"]
+    for name in ("build_coordinate_fields", "page_geometry", "Y_ORIGIN"):
+        assert not hasattr(p, name), f"{name} still exists"
     # end for
 # end def
 
 
-def test_each_recipient_gets_their_own_row(two_recipients):
-    fields = build_coordinate_fields(make_pdf(""), two_recipients)
-    rows = {f["recipientEmail"]: f["y"] for f in fields if f["type"] == "signature"}
-    assert rows["bob@example.com"] != rows["ann@example.com"]
+# -- refusals --------------------------------------------------------------
+
+
+def test_a_document_with_no_anchors_is_refused(plain_pdf, two_recipients):
+    with pytest.raises(TurboSignError) as exc:
+        resolve_fields(plain_pdf, "a.pdf", two_recipients)
+    # end with
+    assert "no signature anchors" in exc.value.message
+    # The refusal has to teach, or the caller just tries again the same way.
+    assert "{Signature1}" in exc.value.hint
 # end def
 
 
-def test_too_many_recipients_to_fit_is_refused_before_the_api_sees_it():
-    many = [
-        {"name": f"P{i}", "email": f"p{i}@example.com", "signingOrder": 1}
-        for i in range(12)
-    ]
-    with pytest.raises(TurboSignError, match="do not fit"):
-        build_coordinate_fields(make_pdf("", height=200), many)
+def test_the_refusal_points_at_the_signature_block_it_found(two_recipients):
+    # The most useful case: the author DID leave somewhere to sign, and just
+    # needs to be told to put the anchor there.
+    pdf = make_pdf("PARTY A\n   Signature: ______________________")
+    with pytest.raises(TurboSignError) as exc:
+        resolve_fields(pdf, "a.pdf", two_recipients)
+    # end with
+    assert "does have a signature block" in exc.value.hint
+    assert "Put the anchors there" in exc.value.hint
+# end def
+
+
+def test_a_recipient_with_no_anchor_is_refused(two_recipients):
+    # Half-anchored is the dangerous shape: it would send, and the omitted
+    # party would get an agreement with nowhere to sign.
+    pdf = make_pdf("Only one block here: {Signature1} {Date1}")
+    with pytest.raises(TurboSignError) as exc:
+        resolve_fields(pdf, "a.pdf", two_recipients)
+    # end with
+    assert "ann@example.com" in exc.value.message
+# end def
+
+
+def test_an_anchor_for_a_recipient_who_was_not_listed_is_refused(anchored_pdf):
+    one = [{"name": "Bob", "email": "bob@example.com", "signingOrder": 1}]
+    with pytest.raises(TurboSignError, match="only 1 recipient"):
+        resolve_fields(anchored_pdf, "a.pdf", one)
     # end with
 # end def
 
 
-def test_page_geometry_reads_a_non_default_page_size():
-    count, width, height = page_geometry(make_pdf("", pages=2, width=842, height=595))
-    assert (count, round(width), round(height)) == (2, 842, 595)
-# end def
-
-
-# -- the coordinate-origin assumption -------------------------------------
-
-
-def test_the_y_origin_matches_the_verified_live_behaviour():
-    # Not a guess: verified 2026-08-01 against api.turbodocx.com, where a
-    # review of an unanchored PDF put the boxes at the foot of the page.
-    # If a future API change moves them, flip this constant and this test
-    # together — nothing else depends on it. See docs/VERIFICATION.md.
-    assert placement.Y_ORIGIN == "top"
-# end def
-
-
-def test_top_origin_puts_the_first_row_near_the_page_bottom(two_recipients):
-    fields = build_coordinate_fields(make_pdf(""), two_recipients[:1])
-    signature = next(f for f in fields if f["type"] == "signature")
-    # With a top-left origin, "near the bottom" means a large y.
-    assert signature["y"] > signature["pageHeight"] * 0.8
-# end def
-
-
-# -- explicit and forced modes --------------------------------------------
-
-
-def test_explicit_fields_are_passed_through_untouched(plain_pdf, two_recipients):
-    given = [{"type": "signature", "recipientEmail": "bob@example.com", "page": 1}]
-    fields, strategy = resolve_fields(
-        plain_pdf, "a.pdf", two_recipients, placement="auto", fields=given
-    )
-    assert strategy == "explicit"
-    assert fields == given
-# end def
-
-
-def test_explicit_fields_accept_a_json_string(plain_pdf, two_recipients):
-    fields, strategy = resolve_fields(
-        plain_pdf,
-        "a.pdf",
-        two_recipients,
-        fields='[{"type": "signature", "recipientEmail": "bob@example.com"}]',
-    )
-    assert strategy == "explicit"
-    assert fields[0]["type"] == "signature"
-# end def
-
-
-def test_forcing_anchor_mode_without_anchors_fails_helpfully(plain_pdf, two_recipients):
-    with pytest.raises(TurboSignError) as excinfo:
-        resolve_fields(plain_pdf, "a.pdf", two_recipients, placement="anchor")
-    # end with
-    assert "{Signature1}" in excinfo.value.hint
-# end def
-
-
-def test_a_named_anchor_is_used_directly(anchored_pdf, two_recipients):
-    fields, strategy = resolve_fields(
-        anchored_pdf, "a.pdf", two_recipients, anchor="{Signature2}"
-    )
-    assert strategy == "anchor"
-    assert fields[0]["recipientEmail"] == "ann@example.com"
-# end def
-
-
-def test_non_pdf_cannot_be_measured_and_says_why(plain_pdf, two_recipients):
-    with pytest.raises(TurboSignError, match="only read PDFs"):
-        resolve_fields(plain_pdf, "contract.docx", two_recipients, placement="auto")
+def test_a_non_pdf_is_refused(anchored_pdf, two_recipients):
+    with pytest.raises(TurboSignError, match="only be read from a PDF"):
+        resolve_fields(anchored_pdf, "contract.docx", two_recipients)
     # end with
 # end def
 
@@ -210,4 +146,73 @@ def test_an_unreadable_file_is_reported_as_such(two_recipients):
     with pytest.raises(TurboSignError, match="could not be read as a PDF"):
         resolve_fields(b"not a pdf at all", "a.pdf", two_recipients)
     # end with
+# end def
+
+
+# -- the guidance the refusal hands back -----------------------------------
+
+
+def test_the_guidance_covers_every_rule_that_was_got_wrong_in_practice():
+    # Each of these corresponds to a way a real signature landed wrong.
+    assert "ABOVE THE LINE" in ANCHOR_GUIDANCE
+    assert "INVISIBLE" in ANCHOR_GUIDANCE
+    assert "background colour" in ANCHOR_GUIDANCE
+    assert "SIGNATURE LEFT, DATE RIGHT" in ANCHOR_GUIDANCE
+    assert "POSITION IN YOUR RECIPIENTS LIST" in ANCHOR_GUIDANCE
+# end def
+
+
+def test_the_guidance_says_anchors_go_in_the_source_document():
+    # Anchors must be real extractable text, so a finished PDF cannot gain
+    # them. Advice that ignores this sends the reader in circles.
+    assert "SOURCE document" in ANCHOR_GUIDANCE
+# end def
+
+
+def test_the_guidance_shows_a_worked_example():
+    assert "{Signature1}" in ANCHOR_GUIDANCE
+    assert "{Date1}" in ANCHOR_GUIDANCE
+    assert "____" in ANCHOR_GUIDANCE
+# end def
+
+
+# -- detecting a document that has its own signature block ----------------
+
+
+def test_printed_signature_lines_are_detected():
+    pdf = make_pdf("PARTY A\n   Signature: ______________________\n   Date: ____")
+    hints = find_signature_hints(pdf)
+    assert hints
+    assert any("signature" in h.lower() for h in hints)
+# end def
+
+
+def test_a_long_underscore_run_counts_as_a_signature_line():
+    assert find_signature_hints(make_pdf("X ____________________ Y"))
+# end def
+
+
+def test_ordinary_prose_is_not_flagged():
+    pdf = make_pdf("Effective Date: 1 August 2026\nThis agreement is binding.")
+    assert find_signature_hints(pdf) == []
+# end def
+
+
+def test_hint_detection_survives_an_unreadable_file():
+    assert find_signature_hints(b"not a pdf") == []
+# end def
+
+
+# -- anchor field construction --------------------------------------------
+
+
+def test_build_anchor_fields_marks_every_field_required(two_recipients):
+    fields = build_anchor_fields(["{Signature1}", "{Signature2}"], two_recipients)
+    assert all(f["required"] for f in fields)
+# end def
+
+
+def test_anchor_replacement_is_case_insensitive_at_the_api(two_recipients):
+    fields = build_anchor_fields(["{signature1}"], two_recipients)
+    assert fields[0]["template"]["caseSensitive"] is False
 # end def

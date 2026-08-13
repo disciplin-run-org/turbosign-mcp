@@ -1,16 +1,21 @@
-"""Deciding where the signature boxes go.
+"""Where the signature boxes go: inline text anchors, and nothing else.
 
-Three strategies, and the default picks between the first two on its own:
+The document says where each party signs, by carrying marker text like
+``{Signature1}`` at the place the signature belongs. There is one mechanism and
+no alternative — no geometric placement, no caller-supplied coordinates.
 
-* **anchor** — the document contains marker text like ``{Signature1}`` and
-  TurboSign replaces it. Exact, and immune to any coordinate-system question.
-* **coordinates** — boxes are placed geometrically on the last page. Works on
-  any document, including one nobody prepared for signing.
-* **explicit** — the caller supplies the fields array verbatim.
+That is a deliberate narrowing of what the TurboSign API itself allows, and it
+was bought with experience: roughly ten separate attempts placed a signature in
+the wrong place on a real agreement before the document was hand-corrected.
+Every one of those was a position computed by something that could not see the
+page. An anchor cannot be off by a page or a hundred points, because the author
+put it where the signature goes.
 
-``auto`` reads the document, uses anchors when it finds them, and falls back to
-geometry when it does not. So a prepared template gets exact placement for free
-and an arbitrary PDF still just works.
+The cost is real and accepted: a PDF you cannot edit cannot be sent through
+this server. Add the anchors to the source and re-export.
+
+See ``ANCHOR_GUIDANCE`` for the layout that works, which is also served to
+callers through the MCP instructions.
 """
 
 from __future__ import annotations
@@ -19,30 +24,6 @@ import io
 import re
 
 from .errors import TurboSignError
-
-# ---------------------------------------------------------------------------
-# Coordinate system
-# ---------------------------------------------------------------------------
-# Top-left origin: `y` is the distance DOWN from the top edge of the page.
-#
-# Documented — "Vertical position from top edge (pixels)" — though not on the
-# TurboSign API page that covers everything else about fields, which is why
-# this was initially treated as an open question and verified empirically
-# instead. It was: a review of an unanchored PDF put the boxes at the foot of
-# the last page, matching. Documentation and behaviour agree.
-#
-# The docs say "pixels" while we send PDF points from pypdf's mediabox. That
-# discrepancy is moot because build_coordinate_fields also sends pageWidth and
-# pageHeight, so the server scales into whatever units it uses.
-#
-# Kept as one constant so a future API change stays a one-line fix.
-# Record in docs/VERIFICATION.md.
-Y_ORIGIN = "top"
-
-# Page geometry for the coordinate fallback, in PDF points (72 per inch).
-BOTTOM_MARGIN = 54.0
-LEFT_MARGIN = 54.0
-ROW_GAP = 18.0
 
 # Default box sizes per field type.
 FIELD_SIZES: dict[str, tuple[float, float]] = {
@@ -88,8 +69,37 @@ _KIND_TO_TYPE: dict[str, str] = {
     "checkbox": "checkbox",
 }
 
-# Field types placed automatically for each recipient when no anchors exist.
-DEFAULT_AUTO_FIELDS: tuple[str, ...] = ("signature", "date")
+# How to lay the anchors out. Served to callers verbatim through the MCP
+# instructions, because an agent preparing a document is exactly who needs it
+# and exactly who will otherwise guess.
+ANCHOR_GUIDANCE = """\
+Put the anchors in the SOURCE document, then export the PDF. They have to be
+real extractable text, so they cannot be added to a finished PDF.
+
+Layout, per signing party:
+
+     {Signature1}<tab><tab>{Date1}
+     ______________________________________________
+     [Ann Jones Signature & Date]
+
+Four rules that matter:
+
+  1. ABOVE THE LINE. The anchor goes on its own line directly above the
+     signature rule, not on it and not below it. TurboSign draws the field
+     downward from where the anchor sits, so an anchor above the rule puts the
+     signature ON the rule. An anchor on the rule pushes it below.
+  2. INVISIBLE. Set the anchor text to the page background colour — white on
+     white. It is still real text, so TurboSign finds it, but nobody sees
+     {Signature1} on the executed agreement.
+  3. SIGNATURE LEFT, DATE RIGHT. Both on that same line, separated by tabs.
+  4. THE NUMBER IS THE SIGNER'S POSITION IN YOUR RECIPIENTS LIST, not the
+     order they appear in the document. If the company counter-signs at the
+     top of the page but is second in your recipients list, the company's
+     anchors are {Signature2}/{Date2}. Getting this backwards swaps who signs
+     where, and the document will still send.
+
+Label the line underneath — "[Company Signature & Date]" — so a human reading
+the draft can see whose block is whose before anyone signs."""
 
 
 def _size_for(field_type: str) -> tuple[float, float]:
@@ -151,33 +161,6 @@ def find_anchors(content: bytes) -> list[str]:
 # end def
 
 
-def page_geometry(content: bytes) -> tuple[int, float, float]:
-    """Return ``(page_count, width, height)`` of the document's last page."""
-    reader = read_pdf(content)
-    count = len(reader.pages)
-    if count == 0:
-        raise TurboSignError(
-            "That PDF has no pages.",
-            "Check the document was exported correctly.",
-        )
-    # end if
-    box = reader.pages[-1].mediabox
-    return count, float(box.width), float(box.height)
-# end def
-
-
-def _y_for(page_height: float, box_height: float, from_bottom: float) -> float:
-    """Convert a distance up from the page bottom into an API ``y``.
-
-    The single place the coordinate-origin assumption is applied.
-    """
-    if Y_ORIGIN == "top":
-        return max(0.0, page_height - from_bottom - box_height)
-    # end if
-    return max(0.0, from_bottom)
-# end def
-
-
 def build_anchor_fields(tokens: list[str], recipients: list[dict]) -> list[dict]:
     """Build template/anchor fields from the tokens found in a document.
 
@@ -222,58 +205,44 @@ def build_anchor_fields(tokens: list[str], recipients: list[dict]) -> list[dict]
 # end def
 
 
-def build_coordinate_fields(
-    content: bytes,
-    recipients: list[dict],
-    field_types: tuple[str, ...] = DEFAULT_AUTO_FIELDS,
-) -> list[dict]:
-    """Place a row of fields per recipient at the foot of the last page.
+# Phrases that say the document already carries its own signature block.
+# Deliberately narrow — a long underscore run or an explicit "Signature:" is
+# somewhere a human expects a signature to land. "Date:" alone is not here; it
+# is far too common in ordinary prose to mean anything.
+SIGNATURE_HINT_RE = re.compile(
+    r"(signature\s*:|signed\s*:|sign\s+here|signature\s+of\b|_{6,}|\.{10,})",
+    re.IGNORECASE,
+)
 
-    Rows stack upward from the bottom margin so the first recipient is lowest,
-    which reads the way a signature block on paper does.
+
+def find_signature_hints(content: bytes, limit: int = 4) -> list[str]:
+    """Phrases suggesting the document has a signature block of its own.
+
+    Used to make the no-anchors refusal specific: a document that already
+    prints "Signature: ______" has somewhere obvious for the anchors to go,
+    and saying so beats repeating generic instructions. Detection is a regex,
+    not a judgement — it reports what it saw.
     """
-    page_count, page_width, page_height = page_geometry(content)
+    try:
+        text = extract_text(content)
+    except TurboSignError:
+        return []
+    # end try
 
-    row_height = max(_size_for(t)[1] for t in field_types)
-    rows_needed = len(recipients)
-    total_height = rows_needed * row_height + max(0, rows_needed - 1) * ROW_GAP
-    if BOTTOM_MARGIN + total_height > page_height:
-        raise TurboSignError(
-            f"{len(recipients)} signature blocks do not fit on the last page.",
-            "Send to fewer recipients at a time, or add {Signature1}-style "
-            "anchors to the document and let TurboSign place them.",
-        )
-    # end if
-
-    fields: list[dict] = []
-    for row, recipient in enumerate(recipients):
-        from_bottom = BOTTOM_MARGIN + row * (row_height + ROW_GAP)
-        x = LEFT_MARGIN
-        for field_type in field_types:
-            width, height = _size_for(field_type)
-            if x + width > page_width - LEFT_MARGIN:
-                # Ran out of horizontal room; drop this one rather than
-                # send coordinates the API will reject.
-                continue
-            # end if
-            fields.append(
-                {
-                    "recipientEmail": recipient["email"],
-                    "type": field_type,
-                    "required": True,
-                    "page": page_count,
-                    "x": round(x, 2),
-                    "y": round(_y_for(page_height, height, from_bottom), 2),
-                    "width": width,
-                    "height": height,
-                    "pageWidth": round(page_width, 2),
-                    "pageHeight": round(page_height, 2),
-                }
-            )
-            x += width + ROW_GAP
-        # end for
+    seen: list[str] = []
+    for match in SIGNATURE_HINT_RE.finditer(text):
+        phrase = " ".join(match.group(0).split())
+        if len(phrase) > 20:
+            phrase = phrase[:20] + "..."
+        # end if
+        if phrase.lower() not in {s.lower() for s in seen}:
+            seen.append(phrase)
+        # end if
+        if len(seen) >= limit:
+            break
+        # end if
     # end for
-    return fields
+    return seen
 # end def
 
 
@@ -281,118 +250,65 @@ def resolve_fields(
     content: bytes,
     filename: str,
     recipients: list[dict],
-    placement: str = "auto",
-    fields=None,
-    anchor: str | None = None,
 ) -> tuple[list[dict], str]:
-    """Work out the fields array for a send.
+    """Build the fields array from the anchors in the document.
+
+    Inline text anchors are the only mechanism. There is no placement
+    parameter and no caller-supplied fields array, because every placement this
+    server has ever got wrong was a position computed by something that could
+    not see the page.
 
     Returns:
-        ``(fields, strategy)`` where strategy is one of ``"explicit"``,
-        ``"anchor"`` or ``"coordinates"`` — reported back to the caller so it
-        is always visible which way a document was handled.
+        ``(fields, "anchor")``. The strategy is returned for a caller that logs
+        it, and is always "anchor".
+
+    Raises:
+        TurboSignError: If the file is not a PDF, carries no anchors, or its
+            anchors do not account for every recipient.
     """
-    if fields:
-        parsed = fields
-        if isinstance(fields, str):
-            import json
-
-            try:
-                parsed = json.loads(fields)
-            except ValueError as exc:
-                raise TurboSignError(
-                    f"fields was a string but would not parse as JSON: {exc}",
-                    "Pass a JSON array, or omit fields and let placement=auto "
-                    "handle it.",
-                ) from exc
-            # end try
-        # end if
-        if not isinstance(parsed, list) or not parsed:
-            raise TurboSignError(
-                "fields must be a non-empty array.",
-                "Omit it entirely to use automatic placement.",
-            )
-        # end if
-        return parsed, "explicit"
-    # end if
-
-    if placement not in {"auto", "anchor", "coordinates", "explicit"}:
-        raise TurboSignError(
-            f"Unknown placement {placement!r}.",
-            "Use auto, anchor, coordinates, or explicit.",
-        )
-    # end if
-
-    if placement == "explicit":
-        raise TurboSignError(
-            "placement='explicit' needs a fields array.",
-            "Pass fields, or use placement='auto'.",
-        )
-    # end if
-
-    if placement == "coordinates":
-        # Geometry placement is gone as a routing option. A document positioned
-        # by measurement declares nothing about WHO signs it, so the recipient
-        # list cannot be checked against anything — and an unchecked chain is
-        # what this server now refuses to send. Rejected by name rather than
-        # left to fail later with "no anchors", which would read as a bug.
-        #
-        # build_coordinate_fields itself is retained and still unit-tested, but
-        # nothing reaches it; delete it if that stays true.
-        raise TurboSignError(
-            "placement='coordinates' is no longer available.",
-            "Signature boxes must come from anchors in the document — add "
-            "tokens like {Signature1} and {Date1} — so the recipients can be "
-            "checked against what the document says.",
-        )
-    # end if
-
-    if anchor:
-        # A single named anchor, one per recipient in order.
-        built = build_anchor_fields([anchor], recipients)
-        if not built:
-            raise TurboSignError(
-                f"{anchor!r} is not a recognised anchor token.",
-                "Use a token like {Signature1}, {Date1} or {Initial1}.",
-            )
-        # end if
-        return built, "anchor"
-    # end if
-
     if not is_pdf(filename):
         raise TurboSignError(
-            f"Automatic placement can only read PDFs, and this is {filename}.",
-            "Either convert the document to PDF, or pass an anchor / explicit "
-            "fields so nothing has to be measured.",
+            f"Signature anchors can only be read from a PDF, and this is "
+            f"{filename}.",
+            "Export the document to PDF with the anchors already in it.",
         )
     # end if
 
     tokens = find_anchors(content)
-
-    if placement == "anchor":
-        if not tokens:
-            raise TurboSignError(
-                "placement='anchor' was requested but the document contains "
-                "no anchor tokens.",
-                "Add text like {Signature1} where the box should go, or use "
-                "placement='auto' to fall back to automatic positioning.",
+    if not tokens:
+        hint = ANCHOR_GUIDANCE
+        blocks = find_signature_hints(content)
+        if blocks:
+            hint = (
+                "This document does have a signature block — found "
+                + ", ".join(repr(b) for b in blocks)
+                + ". Put the anchors there.\n\n"
+                + hint
             )
         # end if
-        from .chain import require_anchor_coverage  # local: avoids an import cycle
-
-        require_anchor_coverage(tokens, recipients)
-        return build_anchor_fields(tokens, recipients), "anchor"
+        raise TurboSignError(
+            "The document carries no signature anchors, so it does not say "
+            "where anyone signs.",
+            hint,
+        )
     # end if
 
-    # placement="auto" no longer falls back to geometry. A document with no
-    # anchors declares nothing about who signs it, so there is nothing to check
-    # the recipient list against — and an unchecked chain is the whole thing
-    # this server is trying not to send. See chain.require_anchor_coverage.
-    #
-    # build_coordinate_fields survives for callers that pass explicit fields;
-    # it is simply no longer reachable by omission.
-    from .chain import require_anchor_coverage  # local: avoids an import cycle
+    fields = build_anchor_fields(tokens, recipients)
 
-    require_anchor_coverage(tokens, recipients)
-    return build_anchor_fields(tokens, recipients), "anchor"
+    # Every recipient must have somewhere to sign. A document whose anchors
+    # cover only some of the signers would send, and the omitted party would
+    # receive an agreement with no field to complete.
+    covered = {f["recipientEmail"] for f in fields}
+    missing = [r["email"] for r in recipients if r["email"] not in covered]
+    if missing:
+        raise TurboSignError(
+            "The document has no anchors for: " + ", ".join(missing) + ".",
+            "Every recipient needs their own numbered anchors. Recipient N in "
+            "your list signs at {SignatureN}/{DateN} — the number is their "
+            "position in the recipients list, not their position in the "
+            "document.\n\n" + ANCHOR_GUIDANCE,
+        )
+    # end if
+
+    return fields, "anchor"
 # end def

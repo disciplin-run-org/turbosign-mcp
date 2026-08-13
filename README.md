@@ -61,7 +61,7 @@ Four rules, each closing a different hole:
 | | |
 |---|---|
 | **Names are explicit** | A bare address is refused, not given a name derived from its local part. |
-| **The sender is per-send** | `sender_email` and `sender_name` are required arguments; there is no fallback to config. |
+| **The sender is per-send** | `sender_email` and `sender_name` are **required arguments in the tool schema**, so a caller cannot omit them; there is no fallback to config. |
 | **Signers are allowlisted** | `TURBOSIGN_ALLOWED_SIGNERS` — environment only, so a tool call cannot widen it. |
 | **The document declares the chain** | Anchors are cross-checked against the recipients; every recipient must have a field. |
 
@@ -77,17 +77,48 @@ export TURBOSIGN_ALLOWED_SIGNERS="@yourcompany.com, counsel@example.com"
 **An unset allowlist refuses everything**, rather than allowing everything.
 Reading absence as permission is how a channel quietly becomes something else.
 
-### Every document needs anchors
+### The document says where people sign — nothing else can
 
-`placement="auto"` no longer falls back to measuring the page, and
-`placement="coordinates"` is refused. A document with no anchors declares
-nothing about who signs it, so there is nothing to check the recipients against.
+There is no `placement` argument, no coordinates and no `fields` array. The PDF
+carries inline text anchors where each party signs, or it is refused.
 
-Add `{Signature1}`, `{Date1}` and so on where each party signs. You also get
-exact placement instead of boxes guessed at the foot of the last page.
+That is deliberately narrower than the TurboSign API allows, and it was bought
+with experience: roughly ten signatures landed in the wrong place on a real
+agreement before it was corrected by hand. Every one was a position computed by
+something that could not see the page. An anchor cannot be off by a page,
+because the author put it where the signature goes.
 
-`turbosign_review` is held to all of the above — a rehearsal that skipped the
+The cost is accepted rather than hidden: **a PDF you cannot edit cannot be sent
+through this server.** Anchors have to be real extractable text, so they go in
+the source document and you re-export.
+
+#### How to anchor a document
+
+```
+     {Signature1}<tab><tab>{Date1}
+     ______________________________________________
+     [Ann Jones Signature & Date]
+```
+
+1. **Above the line.** On its own line directly above the signature rule.
+   TurboSign draws the field *downward* from the anchor, so an anchor above the
+   rule puts the signature on it. An anchor on the rule pushes it below.
+2. **Invisible.** Colour the anchor text to match the page background — white
+   on white. Still real text, so TurboSign finds it; nobody sees `{Signature1}`
+   on the executed agreement.
+3. **Signature left, date right**, same line, tab-separated.
+4. **The number is the signer's position in your recipients list**, not their
+   position in the document. A company that counter-signs at the top of the
+   page but is second in your list gets `{Signature2}`/`{Date2}`. Getting this
+   backwards swaps who signs where — and the document still sends.
+
+The same guidance comes back in the error when a document has no anchors, and
+it is served from one place in the code so the two cannot disagree.
+
+`turbosign_review` is held to every rule above — a rehearsal that skipped the
 checks would return a clean preview for a request that could never be sent.
+**Open the preview and look**, every time: a wrong anchor number produces a
+perfectly valid-looking agreement signed by the wrong party in the wrong place.
 
 ## Getting credentialled
 

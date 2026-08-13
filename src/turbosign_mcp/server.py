@@ -13,6 +13,7 @@ import sys
 from fastmcp import FastMCP
 
 from . import __version__
+from .placement import ANCHOR_GUIDANCE
 from .tools import onboarding, signing
 
 SERVER_NAME = "turbosign"
@@ -84,21 +85,22 @@ document is even read:
   4. THE DOCUMENT DECLARES THE CHAIN. Every document needs {Signature1}-style
      anchors, and they are cross-checked against the recipients.
 
-PLACEMENT — the document must carry anchor text like {Signature1} and {Date1}
-where each party signs. placement="auto" finds them and puts the fields exactly
-there. There is NO automatic placement by geometry: a document that declares
-nothing about who signs it cannot be checked against the recipient list, so an
-unanchored document is refused rather than guessed at. placement="coordinates"
-is refused by name for the same reason.
+PLACEMENT — THE DOCUMENT DECIDES, AND NOTHING ELSE CAN. The PDF must carry
+inline text anchors where each party signs. There is no placement argument, no
+coordinates, and no fields array: a PDF without anchors is refused, not guessed
+at. This is narrower than the TurboSign API allows, on purpose — roughly ten
+signatures landed in the wrong place on a real agreement before it was
+hand-corrected, and every one was a position computed by something that could
+not see the page.
+
+HOW TO ANCHOR A DOCUMENT — get this right and the rest is easy:
+
+__ANCHOR_GUIDANCE__
 
 BEFORE CALLING review OR send, check the document for anchors. If it has a
-signature block — "Signature: ______", a printed line, anything a reader would
-expect to sign on — but no {Signature1} tokens, the request will be refused.
-Fix it at the source: add the anchors to the document the PDF was exported
-from, since anchors have to be real extractable text and usually cannot be
-added to a finished PDF. Failing that, pass explicit fields with
-page/x/y/width/height. Do not go looking for a geometry fallback; there isn't
-one any more.
+signature block but no {Signature1} tokens, you must fix the SOURCE document
+and re-export — anchors have to be real extractable text, so they cannot be
+added to a finished PDF. There is no fallback to look for.
 
 RECIPIENTS — "Bob Smith <bob@example.com>, Ann Jones <ann@example.com>". Every
 recipient needs a name AND an address. By default everyone can sign at once;
@@ -116,6 +118,14 @@ not after.
 
 Call get_instructions() to re-read this at any time.
 """
+
+# The anchor layout is written once, in placement.py, and served from there —
+# both in these instructions and in the error a document without anchors gets
+# back. Two copies would drift, and the copy that drifted would be the one
+# someone followed.
+SERVER_INSTRUCTIONS = SERVER_INSTRUCTIONS.replace(
+    "__ANCHOR_GUIDANCE__", ANCHOR_GUIDANCE
+)
 
 mcp = FastMCP(SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
 
