@@ -4,6 +4,20 @@ What changed, for the person using this — not the person reading git history.
 
 ## Unreleased
 
+**You can send to anyone again.** The signer allowlist is gone.
+
+It required every counterparty to be pre-approved in an environment variable
+before you could send them anything, which meant signing an agreement with
+somebody new was a job on the box rather than a thing you just did. The idea
+was to bound who a hijacked agent could send a binding document to — but if you
+send someone a document *to sign*, sending it is what permission means, and on
+an agent deployment the send already stops for human approval anyway.
+
+Nothing else changed. Names are still explicit, the sender is still stated on
+every send, and the document still has to say where each party signs.
+
+## Unreleased
+
 **Anchors are now the only way a signature gets placed, and the server teaches
 you how to write them.**
 

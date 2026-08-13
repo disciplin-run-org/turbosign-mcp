@@ -56,26 +56,27 @@ that arrives by default is a party to a contract that nobody chose.
 > send ~/contracts/nda.pdf to Bob Smith <bob@example.com> for signature
 ```
 
-Four rules, each closing a different hole:
+Three rules, each closing a different hole:
 
 | | |
 |---|---|
 | **Names are explicit** | A bare address is refused, not given a name derived from its local part. |
 | **The sender is per-send** | `sender_email` and `sender_name` are **required arguments in the tool schema**, so a caller cannot omit them; there is no fallback to config. |
-| **Signers are allowlisted** | `TURBOSIGN_ALLOWED_SIGNERS` — environment only, so a tool call cannot widen it. |
-| **The document declares the chain** | Anchors are cross-checked against the recipients; every recipient must have a field. |
+| **The document declares the chain** | Anchors are cross-checked against the recipients; every recipient must have a field, and every field a recipient. |
 
-They are complementary. A correct-looking name says nothing about whether
-`bob@acme-invoices.com` belongs on the agreement — that is what the allowlist
-sees. And the anchors are the only declaration in a request that the caller did
-not write at the moment of sending; they are in the document a human drafted.
+The anchors are the only declaration in a request that the caller did not write
+at the moment of sending — they are in the document a human drafted, which is
+what makes them worth checking against.
 
-```bash
-export TURBOSIGN_ALLOWED_SIGNERS="@yourcompany.com, counsel@example.com"
-```
-
-**An unset allowlist refuses everything**, rather than allowing everything.
-Reading absence as permission is how a channel quietly becomes something else.
+**There was a fourth rule and it is gone: a signer allowlist.** It refused any
+recipient not pre-approved in an environment variable. The argument for it was
+bounding who a manipulated agent could send to; the argument that won is that
+sending someone a document *to sign* is what permission means, and requiring
+every counterparty to be pre-approved on the box made signing with anyone new
+an operator task. A permanent everyday cost against an occasional threat that
+is already covered where it matters — on an agent deployment `turbosign_send`
+sits behind human approval, and the person approving it is the person who
+decided to send. See [AR-7](architrix/adr/AR-7.md).
 
 ### The document says where people sign — nothing else can
 
@@ -371,8 +372,9 @@ recorded as MADR records in [`architrix/adr/`](architrix/adr/), in force as of
 | [**AR-2**](architrix/adr/AR-2.md) | Call the API with httpx directly, not the official SDK |
 | [**AR-3**](architrix/adr/AR-3.md) | Synchronous tools with a bounded timeout, not `task=True` |
 | [**AR-4**](architrix/adr/AR-4.md) | Environment beats stored credentials, and onboarding lives in the server |
-| [**AR-5**](architrix/adr/AR-5.md) | The signing chain is stated, never inferred |
+| [**AR-5**](architrix/adr/AR-5.md) | The signing chain is stated, never inferred *(superseded by AR-7)* |
 | [**AR-6**](architrix/adr/AR-6.md) | Inline text anchors are the only placement mechanism |
+| [**AR-7**](architrix/adr/AR-7.md) | The signer allowlist is removed |
 
 Each records what was given up as well as what was gained. AR-3 in particular
 is a deliberate, documented deviation from the house MCP-server standard —

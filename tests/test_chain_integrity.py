@@ -6,19 +6,23 @@ for the wrong person to end up on a contract without anyone choosing it — and 
 an agent-driven box, "nobody chose it" includes "the model chose it".
 
 So the initiator states the whole chain, and the server refuses anything less.
-Four rules, each closing a different hole:
+Three rules, each closing a different hole:
 
   1. NAMES ARE EXPLICIT.  No display name is invented from an address, and the
      sender is not inherited from config.
-  2. SIGNERS ARE PERMITTED.  Addresses must match an allowlist held in the
-     environment, which is out of reach of a tool call.
-  3. THE DOCUMENT DECLARES THE CHAIN.  Anchors are cross-checked against the
+  2. THE DOCUMENT DECLARES THE CHAIN.  Anchors are cross-checked against the
      recipients, so a party cannot be added to or dropped from a contract whose
      signature blocks say otherwise.
-  4. THERE IS NO UNANCHORED PATH.  Geometry placement is gone; a document that
+  3. THERE IS NO UNANCHORED PATH.  Geometry placement is gone; a document that
      declares nothing cannot be sent.
 
-Rules 1 and 2 are about who; 3 and 4 are about the document agreeing.
+Rule 1 is about who; 2 and 3 are about the document agreeing.
+
+A fourth rule, a signer allowlist, was removed — see AR-7. It refused any
+recipient not pre-approved in an environment variable, which meant signing an
+agreement with anyone new required editing the box. A permanent everyday cost
+against an occasional threat already covered by the human approval gate that
+sits in front of turbosign_send on an agent deployment.
 """
 
 from __future__ import annotations
@@ -71,56 +75,7 @@ def test_a_complete_sender_passes():
     chain.require_sender("jesper@example.com", "Jesper Jurcenoks")
 
 
-# ── 2. signers are permitted ─────────────────────────────────────────────────
-
-def test_an_unset_allowlist_refuses_everything():
-    """Fail closed. An empty allowlist is not "allow all" — it is unconfigured.
-
-    Reading absence as permission is how the Signal gateway nearly became a
-    command channel; the same mistake is not made twice.
-    """
-    people = parse_recipients("Bob Smith <bob@example.com>")
-    with pytest.raises(TurboSignError) as exc:
-        chain.require_allowed_signers(people, allowlist=[])
-    assert "allowlist" in str(exc.value).lower()
-
-
-def test_an_exact_address_is_allowed():
-    people = parse_recipients("Bob Smith <bob@acme.com>")
-    chain.require_allowed_signers(people, allowlist=["bob@acme.com"])
-
-
-def test_a_domain_entry_allows_its_members():
-    people = parse_recipients("Bob Smith <bob@acme.com>")
-    chain.require_allowed_signers(people, allowlist=["@acme.com"])
-
-
-def test_a_lookalike_domain_is_refused():
-    """The case the naming rule cannot see: a well-formed, fully named stranger."""
-    people = parse_recipients("Bob Smith <bob@acme-invoices.com>")
-    with pytest.raises(TurboSignError) as exc:
-        chain.require_allowed_signers(people, allowlist=["@acme.com"])
-    assert "acme-invoices.com" in str(exc.value)
-
-
-def test_matching_is_case_insensitive():
-    people = parse_recipients("Bob Smith <Bob@ACME.com>")
-    chain.require_allowed_signers(people, allowlist=["@acme.com"])
-
-
-def test_one_disallowed_signer_fails_the_whole_chain():
-    people = parse_recipients("Bob <bob@acme.com>, Mallory <m@evil.com>")
-    with pytest.raises(TurboSignError):
-        chain.require_allowed_signers(people, allowlist=["@acme.com"])
-
-
-def test_allowlist_parsing_ignores_blanks_and_case():
-    assert chain.parse_allowlist(" @Acme.com , bob@Example.COM ,, ") == [
-        "@acme.com", "bob@example.com"
-    ]
-
-
-# ── 3. the document declares the chain ───────────────────────────────────────
+# ── 2. the document declares the chain ───────────────────────────────────────
 
 def test_every_recipient_must_have_an_anchor():
     """A third party on a two-signature contract gets no field at all.

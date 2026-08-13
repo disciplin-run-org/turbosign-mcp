@@ -19,21 +19,25 @@ The wiring lives in the `Hermes` repo (`~/PycharmProjects/Hermes`), not here:
 
 ---
 
-## What v2.0.0 requires, and what breaks without it
+## What v2 requires, and what breaks without it
 
-Two preconditions. A box missing either is installed, healthy, and unable to
-send — which is the failure mode worth knowing about in advance.
+**One precondition: documents must carry `{Signature1}`/`{Date1}` anchors.**
+There is no geometric fallback — an unanchored PDF is refused, not placed at
+the foot of the page. The server's `get_instructions()` returns the layout, and
+so does the error. See AR-6 in `architrix/adr/` for why, and the README for the
+layout.
 
-**1. `TURBOSIGN_ALLOWED_SIGNERS` must be set in the instance's vault.** Unset
-refuses every signer rather than allowing every signer. Present in both
-`host-vault/` and `host-vault-jj/` as of 2026-08-13; re-check after any vault
-rotation, because the symptom is "nothing can be sent" with correct-looking
-config everywhere.
+**The signer allowlist is gone** (AR-7). v1.0.0 introduced
+`TURBOSIGN_ALLOWED_SIGNERS`, which refused any recipient not pre-approved in
+the environment; it has been removed from the server, from
+`guest/config/secrets.allowlist` and from the `mcp_servers` env block. Nothing
+reads it, so a stale value left in a vault is inert.
 
-**2. Documents must carry `{Signature1}`/`{Date1}` anchors.** There is no
-geometric fallback — an unanchored PDF is refused, not placed at the foot of
-the page. The server's `get_instructions()` returns the layout, and so does the
-error. See AR-6 in `architrix/adr/` for why, and the README for the layout.
+It was dropped because it made signing an agreement with anybody new an
+operator task on the box, which is the ordinary case for this product rather
+than an exception. What that gives up is stated in AR-7 rather than glossed:
+the server no longer catches a lookalike domain, so `bob@acme-invoices.com`
+depends on a human reading the address on the approval prompt.
 
 The practical consequence for an agent: it cannot take a counterparty's PDF and
 send it. Anchors are real extractable text, so they go into the source document
@@ -74,7 +78,6 @@ which Hermes interpolates from `~/.hermes/.env` at load time:
       TURBODOCX_ORG_ID: "${TURBODOCX_ORG_ID}"
       TURBODOCX_SENDER_EMAIL: "${TURBODOCX_SENDER_EMAIL}"
       TURBODOCX_SENDER_NAME: "${TURBODOCX_SENDER_NAME}"
-      TURBOSIGN_ALLOWED_SIGNERS: "${TURBOSIGN_ALLOWED_SIGNERS}"
 ```
 
 References rather than values, so the secret's only home is the vault and no

@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 
 from ..api import TurboSignClient
 from ..config import load_settings
-from ..chain import require_allowed_signers, require_sender
+from ..chain import require_sender
 from ..errors import TurboSignError
 from ..files import resolve_document, resolve_output_path
 from ..placement import resolve_fields
@@ -116,7 +116,6 @@ def _prepare_args(
     content = path.read_bytes()
 
     people = parse_recipients(recipients, sequential=sequential)
-    require_allowed_signers(people)
     built_fields, strategy = resolve_fields(content, path.name, people)
 
     cc: list[str] | None = None

@@ -184,16 +184,36 @@ async def test_instructions_teach_the_anchor_layout():
 
 
 async def test_instructions_state_every_chain_rule():
-    # All four are refusals an agent will hit. Two of them — the allowlist and
-    # the per-send sender — it cannot discover from the tool schema alone.
+    # All three are refusals an agent will hit, and the per-send sender is one
+    # it cannot discover from the tool schema alone.
     text = await _call("get_instructions", {})
     for rule in (
         "NAMES ARE EXPLICIT",
         "THE SENDER IS PER-SEND",
-        "TURBOSIGN_ALLOWED_SIGNERS",
         "THE DOCUMENT DECLARES THE CHAIN",
     ):
         assert rule in text, f"instructions do not mention {rule}"
+    # end for
+# end def
+
+
+async def test_the_allowlist_is_gone_from_the_instructions():
+    # It was removed (AR-7). Instructions that still describe it would send an
+    # agent hunting for an environment variable nothing reads, and imply a
+    # protection that is not there.
+    text = await _call("get_instructions", {})
+    assert "TURBOSIGN_ALLOWED_SIGNERS" not in text
+    assert "ALLOWLIST" not in text.upper()
+# end def
+
+
+async def test_no_allowlist_stands_between_a_caller_and_a_new_counterparty():
+    # The rule that was dropped. Sending to somebody you have never sent to
+    # before is the ordinary case, not an exception to be pre-approved.
+    import turbosign_mcp.chain as chain
+
+    for gone in ("require_allowed_signers", "load_allowlist", "parse_allowlist"):
+        assert not hasattr(chain, gone), f"{gone} is back"
     # end for
 # end def
 
@@ -584,27 +604,6 @@ async def test_send_refuses_an_unnamed_recipient(configured):
     )
     assert result["ok"] is False
     assert "name" in str(result).lower()
-# end def
-
-
-@respx.mock
-async def test_send_refuses_a_signer_off_the_allowlist(configured):
-    """A fully named stranger at a lookalike domain — what naming cannot see."""
-    from .conftest import make_pdf
-
-    pdf = configured / "nda.pdf"
-    pdf.write_bytes(make_pdf("Sign here: {Signature1}"))
-    result = await _call(
-        "turbosign_send",
-        {
-            "file_path": str(pdf),
-            "recipients": "Bob Smith <bob@example-invoices.com>",
-            "sender_email": "sender@example.com",
-            "sender_name": "Test Sender",
-        },
-    )
-    assert result["ok"] is False
-    assert "allowlist" in str(result).lower()
 # end def
 
 

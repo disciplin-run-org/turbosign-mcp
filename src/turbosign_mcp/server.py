@@ -70,7 +70,7 @@ opened it, and when).
 
 THE SIGNING CHAIN MUST BE STATED, NEVER INFERRED. A signature request names
 the parties to a legal instrument, so nothing about who signs is filled in for
-you. Four rules, and a request that breaks any of them is refused before the
+you. Three rules, and a request that breaks any of them is refused before the
 document is even read:
 
   1. NAMES ARE EXPLICIT. "Bob Smith <bob@example.com>" — a bare address is
@@ -78,12 +78,9 @@ document is even read:
      executed agreement that guess would be the name of a party.
   2. THE SENDER IS PER-SEND. sender_email and sender_name are required
      arguments on every review and send. There is no fallback to configuration.
-  3. SIGNERS ARE ALLOWLISTED. TURBOSIGN_ALLOWED_SIGNERS, read from the
-     environment only, so no tool call can widen it. Unset refuses everything
-     rather than allowing everything. If you hit this, ask the human — you
-     cannot fix it yourself, by design.
-  4. THE DOCUMENT DECLARES THE CHAIN. Every document needs {Signature1}-style
-     anchors, and they are cross-checked against the recipients.
+  3. THE DOCUMENT DECLARES THE CHAIN. Every document needs {Signature1}-style
+     anchors, and they are cross-checked against the recipients: a party with
+     no signature block, or a signature block with no party, is refused.
 
 PLACEMENT — THE DOCUMENT DECIDES, AND NOTHING ELSE CAN. The PDF must carry
 inline text anchors where each party signs. There is no placement argument, no

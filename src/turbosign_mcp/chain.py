@@ -10,23 +10,33 @@ So the initiator states the whole chain and this module refuses anything less.
 The functions here are pure and take their inputs explicitly, so each rule can
 be tested on its own rather than only through a send.
 
-The four rules and what each one catches:
+The rules and what each one catches:
 
     require_sender            reply-to inherited from config
-    require_allowed_signers   a fully named stranger at a lookalike domain
     require_anchor_coverage   a party added to, or dropped from, a contract
                               whose signature blocks say otherwise
     (and in placement.py)     a document that declares nothing at all
 
-They are complementary, not alternatives. A well-formed name passes rule 1 and
-tells you nothing about whether that person belongs on the agreement; the
-document's own anchors are the only declaration in the request that the caller
-did not write at the moment of sending.
+There was a fourth: a signer allowlist, read from the environment, which
+refused any recipient outside it. It is gone, and the reasoning is worth
+keeping because it will be proposed again.
+
+The argument for it was prompt injection — bounding who a manipulated agent
+could send a binding document to. The argument against it, which won: if you
+send someone a document TO SIGN, sending it is what permission means. The
+allowlist demanded that every counterparty be pre-approved in an environment
+variable before the one thing this server exists to do could happen, so
+signing an agreement with anybody new became an operator task on the box.
+That is a large, permanent, everyday cost against an occasional threat that
+is already covered where it matters: on an agent deployment, turbosign_send
+sits behind human approval, and the human approving it is the person who
+decided to send.
+
+See AR-7.
 """
 
 from __future__ import annotations
 
-import os
 import re
 
 from .errors import TurboSignError
@@ -34,30 +44,6 @@ from .errors import TurboSignError
 # Same token grammar placement.py uses to assign fields, imported rather than
 # restated: two regexes that must agree is a bug waiting for a quiet afternoon.
 from .placement import ANCHOR_RE
-
-ALLOWLIST_ENV = "TURBOSIGN_ALLOWED_SIGNERS"
-
-
-def parse_allowlist(raw: str | None) -> list[str]:
-    """Split the allowlist env var into normalised entries.
-
-    Entries are either a full address (``bob@acme.com``) or a domain
-    (``@acme.com``). Case is folded because addresses are not case sensitive in
-    any way that should decide who may sign a contract.
-    """
-    if not raw:
-        return []
-    return [part.strip().lower() for part in raw.split(",") if part.strip()]
-
-
-def load_allowlist() -> list[str]:
-    """The configured allowlist, from the environment only.
-
-    Environment rather than the credential store on purpose: on an agent box the
-    store is a file the agent can write, and an allowlist a tool call can edit
-    is not an allowlist. See the store/env split in credentials.py.
-    """
-    return parse_allowlist(os.environ.get(ALLOWLIST_ENV))
 
 
 def require_sender(sender_email: str, sender_name: str) -> None:
@@ -79,39 +65,6 @@ def require_sender(sender_email: str, sender_name: str) -> None:
             'Pass sender_email="you@example.com" and sender_name="Your Name". '
             "They are no longer taken from configuration — the sender of a "
             "signature request is a per-send decision.",
-        )
-
-
-def require_allowed_signers(recipients: list[dict], allowlist: list[str] | None = None) -> None:
-    """Every signer must match the configured allowlist.
-
-    An EMPTY allowlist refuses everything rather than allowing everything. That
-    direction is not arbitrary: reading absence as permission is the exact shape
-    that turns a messaging gateway into a command channel, and it costs nothing
-    to be explicit here.
-    """
-    entries = load_allowlist() if allowlist is None else allowlist
-    if not entries:
-        raise TurboSignError(
-            f"No signer allowlist is configured, so no signer can be approved.",
-            f"Set {ALLOWLIST_ENV} to the addresses or domains permitted to "
-            'sign, e.g. "@yourcompany.com, counsel@example.com". It is read '
-            "from the environment only, so a tool call cannot widen it.",
-        )
-
-    rejected = []
-    for person in recipients:
-        email = (person.get("email") or "").strip().lower()
-        domain = "@" + email.partition("@")[2]
-        if email not in entries and domain not in entries:
-            rejected.append(person.get("email") or "(no address)")
-
-    if rejected:
-        raise TurboSignError(
-            "These signers are not on the allowlist: " + ", ".join(rejected) + ".",
-            f"Add them to {ALLOWLIST_ENV}, or correct the address. A name that "
-            "reads correctly is not evidence that the address does — this is "
-            "the check that sees a lookalike domain.",
         )
 
 
