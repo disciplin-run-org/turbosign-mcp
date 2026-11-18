@@ -389,12 +389,58 @@ ecosystem's directory-ownership convention. Edit the records through Architrix
 
 ```bash
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest
+bash scripts/suite.sh
 ```
 
-The suite runs without network access or credentials — HTTP is mocked with
-`respx`, and PDF fixtures are generated in code rather than committed, so
-nothing in this public repo can carry a real name or address.
+`scripts/suite.sh` is the whole suite: the self-test on an uncredentialled
+machine, then pytest. It runs without network access or credentials — HTTP is
+mocked with `respx`, and PDF fixtures are generated in code rather than
+committed, so nothing in this public repo can carry a real name or address.
+The release-script tests need jjstack's `jjstack-release-version`, found at
+`$JJSTACK_RELEASE_VERSION` or `~/.claude/skills/jjstack/bin/`; without it they
+fail rather than skip.
+
+## Releasing
+
+There is no GitHub Actions workflow. CI is the release script, which runs the
+suite at the exact commit it releases and refuses on red:
+
+```bash
+git clone https://github.com/disciplin-run-org/turbosign-mcp && cd turbosign-mcp
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+bash scripts/release.sh            # or --dry-run to check without releasing
+```
+
+It releases only a clean checkout of `main`'s tip. jjstack's
+`jjstack-release-version` names the version from the commits since the last
+release (breaking = major, `feat` = minor, `fix` = patch; anything else
+releases nothing and runs no suite). It commits `chore(release): vX.Y.Z` with
+`VERSION` and `pyproject.toml`, runs the suite, and only on green pushes that
+commit and an annotated `vX.Y.Z` tag together in one atomic push. The tag
+records the suite command, its totals, the commit, the time and the Python
+version the suite ran on:
+
+```bash
+git tag -l --format='%(contents)' v3.1.0
+```
+
+The full output is kept in `~/.jjstack/releases/turbosign-mcp/`
+(`TURBOSIGN_RELEASE_LOG_DIR` moves it). Interrupting it (Ctrl-C, `TERM`,
+`HUP`) while the suite runs stops the whole suite, deletes any local tag and
+puts `main` back where it was; once tagging starts it can no longer be
+interrupted, so a release is never left half-pushed. The push itself is
+bounded (`TURBOSIGN_RELEASE_PUSH_TIMEOUT_S`, default 300 seconds) and keeps
+your terminal, so a credential or ssh passphrase prompt still works. After a
+failed or stalled push the script reads `origin` back and keeps the release
+(origin has it), or undoes it (origin has neither, including when someone
+else moved `main` meanwhile), or, if origin cannot be read, keeps the local
+commit and tag and prints the commands to finish by hand. `bash
+scripts/release.sh --help` lists every option.
+
+The suite runs on one interpreter, the operator's: the old workflow's 3.10 and
+3.12 matrix is gone. `requires-python` still says `>=3.10`, which a release
+no longer re-tests, so run `PYTHON=python3.10 bash scripts/suite.sh` before
+releasing anything that might touch 3.10 compatibility.
 
 ## Licence
 
