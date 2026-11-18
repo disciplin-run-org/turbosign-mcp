@@ -43,10 +43,12 @@
 # stops the suite's whole process group, deletes any local tag, resets main to
 # where it was and restores VERSION and pyproject.toml. From tagging on, the
 # three signals are ignored, so a release is never left half-done. A push that
-# fails or passes its limit is followed by a read of the remote: if it holds
-# commit and tag, that is the release; if it holds neither, the local tag is
-# deleted and main reset; if it cannot be read, both are kept and the script
-# prints how to finish by hand.
+# fails or passes its limit is followed by a read of the remote, bounded by
+# TURBOSIGN_RELEASE_READBACK_TIMEOUT_S (default 60): if it holds commit and
+# tag, that is the release; if it holds neither (its branch still at the base,
+# or moved on by someone else), the local tag is deleted and main reset; if it
+# cannot be read, or holds the tag on another commit, both are kept and the
+# script prints how to finish by hand.
 #
 # Cite the run with: git tag -l --format='%(contents)' vX.Y.Z
 # The whole suite output is kept in
@@ -99,6 +101,33 @@ stop_suite() {
   wait "$suite_pid" 2>/dev/null
   kill -KILL -- "-$suite_pid" 2>/dev/null
   suite_pid=""
+}
+kill_tree() {
+  # KILL a process and every descendant, children first: once a parent is
+  # gone its children are reparented and can no longer be found from it.
+  local kid
+  for kid in $(pgrep -P "$1"); do kill_tree "$kid"; done
+  kill -KILL "$1" 2>/dev/null
+}
+bounded() {
+  # Run a command within a time limit, in this shell's own process group, so
+  # it keeps the operator's terminal (a credential or passphrase prompt reads
+  # /dev/tty) and the signals this shell ignores. Past the limit, the whole
+  # tree is killed and the exit is 137.
+  local limit="$1" pid watch rc
+  shift
+  "$@" &
+  pid=$!
+  ( end=$((SECONDS + limit))
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$SECONDS" -ge "$end" ]; then kill_tree "$pid"; exit 0; fi
+      sleep 0.2
+    done ) &
+  watch=$!
+  wait "$pid"
+  rc=$?
+  wait "$watch"
+  return "$rc"
 }
 on_signal() {
   trap '' INT TERM HUP
@@ -211,10 +240,11 @@ fi
 
 # 6. The tag, carrying the record; commit and tag pushed atomically. The three
 #    signals are ignored from here, so an interrupt can never leave a tag
-#    without its push or a push without its local record. The push runs in
-#    its own session (a terminal's Ctrl-C cannot reach it) and is bounded by
-#    TURBOSIGN_RELEASE_PUSH_TIMEOUT_S (default 300): a stalled push ends, and
-#    origin is then read to see what it holds.
+#    without its push or a push without its local record. git and its
+#    helpers inherit the ignore, and they keep the operator's terminal, so a
+#    credential or passphrase prompt still works. The push is bounded by
+#    TURBOSIGN_RELEASE_PUSH_TIMEOUT_S (default 300): a stalled push is
+#    killed, and origin is then read to see what it holds.
 trap '' INT TERM HUP
 msg="$(printf '%s\n\nsuite: %s\nresult: %s\ncommit: %s\nran: %s\n' \
   "$new" "$suite" "${totals:-<no output>}" "$rel" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
@@ -223,30 +253,38 @@ interp="$(grep -m1 -E '^python: [0-9]' "$log" | cut -d' ' -f2-)"
 [ -z "$interp" ] || msg="$(printf '%s\ninterpreter: %s\n' "$msg" "$interp")"
 g tag -a "$new" -m "$msg" "$rel" || refuse "could not create tag $new"
 push_limit="${TURBOSIGN_RELEASE_PUSH_TIMEOUT_S:-300}"
-setsid -w timeout -k 10 "$push_limit" \
+readback_limit="${TURBOSIGN_RELEASE_READBACK_TIMEOUT_S:-60}"
+bounded "$push_limit" \
   git -C "$dir" push -q --atomic "$remote" "$rel:refs/heads/$branch" "refs/tags/$new"
 push_rc=$?
 if [ "$push_rc" -ne 0 ]; then
   why="the push failed (exit $push_rc)"
-  [ "$push_rc" -eq 124 ] || [ "$push_rc" -eq 137 ] && why="the push timed out after ${push_limit}s"
+  [ "$push_rc" -ne 137 ] || why="the push timed out after ${push_limit}s"
   echo "release.sh: $why; reading $remote to see what it holds" >&2
-  # --atomic: origin holds both refs or neither. ls-remote is bounded too.
-  held="$(setsid -w timeout -k 5 60 git -C "$dir" ls-remote "$remote" \
+  # --atomic: origin holds both refs or neither. The read is bounded too.
+  held="$(bounded "$readback_limit" git -C "$dir" ls-remote "$remote" \
             "refs/heads/$branch" "refs/tags/$new")"
   ls_rc=$?
   held_main="$(awk -v r="refs/heads/$branch" '$2 == r {print $1}' <<<"$held")"
   held_tag="$(awk -v r="refs/tags/$new" '$2 == r {print $1}' <<<"$held")"
   if [ "$ls_rc" -eq 0 ] && [ "$held_main" = "$rel" ] && [ -n "$held_tag" ]; then
     echo "release.sh: $remote holds $rel and $new: the release went through" >&2
-  elif [ "$ls_rc" -eq 0 ] && [ "$held_main" = "$base" ] && [ -z "$held_tag" ]; then
+  elif [ "$ls_rc" -eq 0 ] && [ -z "$held_tag" ] && [ "$held_main" = "$base" ]; then
     refuse "could not push $new to $remote: $why, and $remote holds neither; the local tag and release commit were removed"
+  elif [ "$ls_rc" -eq 0 ] && [ -z "$held_tag" ] && [ "$held_main" != "$rel" ]; then
+    refuse "could not push $new to $remote: $why; $remote moved to ${held_main:-<no $branch>} while the release was pushing, so the local tag and release commit were removed. Run the release again from the new tip"
   else
-    # Origin cannot be read, or holds something else: keep the local record,
-    # never guess. Say how to finish by hand.
+    # Origin cannot be read, or holds a state the release did not make (its
+    # tag on another commit): keep the local record, never guess.
     trap - INT TERM HUP
-    echo "release.sh: refused: $why and $remote could not be read back (ls-remote exit $ls_rc)." >&2
+    if [ "$ls_rc" -ne 0 ]; then
+      echo "release.sh: refused: $why, and $remote could not be read back (ls-remote exit $ls_rc)." >&2
+    else
+      echo "release.sh: refused: $why, and $remote holds $branch at ${held_main:-<none>} with $new at ${held_tag:-<none>}, which this release did not make." >&2
+    fi
     echo "  The release commit $rel and tag $new are kept in $dir." >&2
-    echo "  If $remote has $new: nothing to do. If not: git -C $dir reset --soft $base && git -C $dir restore --staged --worktree --source=$base -- VERSION pyproject.toml && git -C $dir tag -d $new" >&2
+    printf '  If %s has %s at %s: nothing to do. If not: git -C %q reset --soft %s && git -C %q restore --staged --worktree --source=%s -- VERSION pyproject.toml && git -C %q tag -d %s\n' \
+      "$remote" "$new" "$rel" "$dir" "$base" "$dir" "$base" "$dir" "$new" >&2
     exit 1
   fi
 fi

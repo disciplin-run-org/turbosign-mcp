@@ -172,6 +172,7 @@ def test_the_tag_records_the_interpreter_the_suite_ran_on(repo, env):
 def test_suite_sh_names_its_interpreter_first():
     text = SUITE_SCRIPT.read_text()
     assert "print('python:', platform.python_version())" in text
+    assert text.index("print('python:'") < text.index("--selftest\n")
 # end def
 
 
@@ -593,6 +594,95 @@ def test_a_push_that_times_out_after_the_remote_took_it_is_a_release(repo, env):
     assert origin_main(repo, env) == rel
     assert "v1.3.0" in origin_tags(repo, env).split()
     assert git(repo["clone"], "tag", "--list", "v1.3.0", env=env) == "v1.3.0"
+# end def
+
+
+def test_origin_that_moves_during_the_push_is_undone(repo, env):
+    # A pre-push hook advances origin from another clone after the step-5
+    # check: the push is rejected, origin holds a third commit and no tag.
+    base = origin_main(repo, env)
+    seed = repo["seed"]
+    hook = repo["clone"] / ".git" / "hooks" / "pre-push"
+    hook.write_text(
+        "#!/usr/bin/env bash\n"
+        f"git -C {seed} commit -q --allow-empty -m 'fix: elsewhere'\n"
+        f"git -C {seed} push -q origin main\n"
+        "exit 0\n"
+    )
+    hook.chmod(0o755)
+    r = release(repo, env)
+    assert r.returncode == 1
+    moved = git(seed, "rev-parse", "HEAD", env=env)
+    assert f"origin moved to {moved}" in r.stderr
+    assert "could not be read back" not in r.stderr
+    assert origin_main(repo, env) == moved
+    assert origin_tags(repo, env) == "v1.2.0"
+    clone = repo["clone"]
+    assert git(clone, "rev-parse", "HEAD", env=env) == base
+    assert git(clone, "tag", "--list", env=env) == "v1.2.0"
+    assert (clone / "VERSION").read_text() == "1.2.0\n"
+# end def
+
+
+def test_origin_that_cannot_be_read_back_keeps_the_local_record(repo, env, tmp_path):
+    # Origin answers every read up to the push and then stops answering: the
+    # push and the read-back after it both stall. Both are bounded, and with
+    # nothing known about origin the local commit and tag are kept, with the
+    # way to finish.
+    flag = tmp_path / "stall"
+    proxy = tmp_path / "proxy.sh"
+    proxy.write_text(
+        "#!/usr/bin/env bash\n"
+        f'[ "$1" = receive-pack ] && touch {flag}\n'
+        f'[ -e {flag} ] && sleep 30\n'
+        'exec git "$1" "$2"\n'
+    )
+    proxy.chmod(0o755)
+    with open(env["GIT_CONFIG_GLOBAL"], "a") as fh:
+        fh.write("[protocol \"ext\"]\n\tallow = always\n")
+    # end with
+    clone = repo["clone"]
+    git(clone, "remote", "set-url", "origin", f"ext::{proxy} %s {repo['origin']}", env=env)
+    base = origin_main(repo, env)
+    env["TURBOSIGN_RELEASE_PUSH_TIMEOUT_S"] = "2"
+    env["TURBOSIGN_RELEASE_READBACK_TIMEOUT_S"] = "2"
+    started = time.monotonic()
+    r = release(repo, env, "echo '1 passed'", timeout=60)
+    assert time.monotonic() - started < 25, "the push or the read-back was not bounded"
+    assert r.returncode == 1
+    assert "could not be read back" in r.stderr
+    assert "are kept" in r.stderr
+    rel = git(clone, "rev-parse", "HEAD", env=env)
+    assert rel != base
+    assert git(clone, "tag", "--list", "v1.3.0", env=env) == "v1.3.0"
+    assert origin_main(repo, env) == base
+    assert origin_tags(repo, env) == "v1.2.0"
+# end def
+
+
+def test_the_push_keeps_the_terminal_for_a_credential_prompt(repo, env, tmp_path):
+    # A credential helper or ssh passphrase prompt reads /dev/tty. The push
+    # must still have the terminal the operator ran the release from.
+    hook = repo["clone"] / ".git" / "hooks" / "pre-push"
+    hook.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo prompt-reached-the-tty > /dev/tty || exit 1\n"
+        "exit 0\n"
+    )
+    hook.chmod(0o755)
+    cmd = (
+        f"bash {SCRIPT} --dir {repo['clone']} --suite \"echo '1 passed'\""
+    )
+    r = subprocess.run(
+        ["script", "-qec", cmd, "/dev/null"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "prompt-reached-the-tty" in r.stdout
+    assert "v1.3.0" in origin_tags(repo, env).split()
 # end def
 
 
