@@ -2,6 +2,8 @@
 # suite.sh - the turbosign-mcp suite: what the Tests workflow ran, now run by
 # scripts/release.sh at the commit it releases (and by hand at a PR head).
 #
+#   0. A "python: X.Y.Z" line naming the interpreter. tests.yml ran 3.10
+#      and 3.12; this runs one, so the release tag records which.
 #   1. The self-test, as the real console entry point would run it, on an
 #      uncredentialled machine: no TURBODOCX_* variable, an empty home.
 #   2. The unit suite. Its last line is the totals the release tag records.
@@ -15,6 +17,10 @@ py="${PYTHON:-}"
 if [ -z "$py" ]; then
   if [ -x .venv/bin/python ]; then py=.venv/bin/python; else py=python3; fi
 fi
+
+# One interpreter per run, not a matrix: say which, so the release tag can
+# record it (release.sh reads this line).
+"$py" -c "import platform; print('python:', platform.python_version())"
 
 home="$(mktemp -d)"
 trap 'rm -rf "$home"' EXIT

@@ -159,6 +159,22 @@ def test_green_suite_releases_commit_and_annotated_tag(repo, env):
 # end def
 
 
+def test_the_tag_records_the_interpreter_the_suite_ran_on(repo, env):
+    # One interpreter now, not a matrix: the tag says which one.
+    r = release(repo, env, "echo 'python: 3.12.3'; echo '3 passed'")
+    assert r.returncode == 0, r.stderr
+    record = git(repo["origin"], "tag", "-l", "--format=%(contents)", "v1.3.0", env=env)
+    assert "interpreter: 3.12.3" in record
+    assert "result: 3 passed" in record
+# end def
+
+
+def test_suite_sh_names_its_interpreter_first():
+    text = SUITE_SCRIPT.read_text()
+    assert "print('python:', platform.python_version())" in text
+# end def
+
+
 def test_the_version_comes_from_jjstack_release_version(repo, env, tmp_path):
     fake = tmp_path / "relver"
     fake.write_text('#!/usr/bin/env bash\necho "called with $1" >&2\necho v7.8.9\n')
@@ -166,6 +182,7 @@ def test_the_version_comes_from_jjstack_release_version(repo, env, tmp_path):
     env["JJSTACK_RELEASE_VERSION"] = str(fake)
     r = release(repo, env)
     assert r.returncode == 0, r.stderr
+    assert f"called with {repo['clone']}" in r.stderr
     assert "v7.8.9" in origin_tags(repo, env).split()
     assert (repo["clone"] / "VERSION").read_text() == "7.8.9\n"
 # end def
@@ -506,6 +523,104 @@ def test_a_remote_that_refuses_only_the_tag_gets_neither(repo, env):
     assert r.returncode == 1
     assert "could not push" in r.stderr
     assert_untouched(repo, env, base)
+# end def
+
+
+def _stall_origin(repo, hook_name: str, then: str) -> None:
+    """Make origin's hook sleep, then exit with `then`."""
+    hook = repo["origin"] / "hooks" / hook_name
+    hook.write_text(f"#!/usr/bin/env bash\nsleep 30\nexit {then}\n")
+    hook.chmod(0o755)
+# end def
+
+
+def test_a_stalled_push_is_bounded_and_restores_main(repo, env):
+    # The remote never answers within the limit and in the end refuses.
+    base = origin_main(repo, env)
+    _stall_origin(repo, "pre-receive", "1")
+    env["TURBOSIGN_RELEASE_PUSH_TIMEOUT_S"] = "2"
+    started = time.monotonic()
+    r = release(repo, env, timeout=60)
+    assert time.monotonic() - started < 25, "the push was not bounded"
+    assert r.returncode == 1
+    assert "timed out" in r.stderr
+    assert_untouched(repo, env, base)
+# end def
+
+
+def test_signals_during_a_stalled_push_are_ignored_but_the_limit_holds(repo, env, tmp_path):
+    base = origin_main(repo, env)
+    _stall_origin(repo, "pre-receive", "1")
+    env["TURBOSIGN_RELEASE_PUSH_TIMEOUT_S"] = "3"
+    proc = subprocess.Popen(
+        ["bash", str(SCRIPT), "--dir", str(repo["clone"]), "--suite", "echo '1 passed'"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    # Wait until the push is running, then send what a terminal would.
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if git(repo["clone"], "tag", "--list", "v1.3.0", env=env) == "v1.3.0":
+            break
+        # end if
+        time.sleep(0.05)
+    # end while
+    time.sleep(0.3)
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        os.killpg(proc.pid, sig)
+    # end for
+    _, err = proc.communicate(timeout=60)
+    assert proc.returncode == 1, err
+    assert "timed out" in err
+    assert_untouched(repo, env, base)
+# end def
+
+
+def test_a_push_that_times_out_after_the_remote_took_it_is_a_release(repo, env):
+    # post-receive runs after the refs are updated and the client waits for
+    # it: the push times out although the remote holds commit and tag. The
+    # local record must stay, or the clone would disagree with origin.
+    _stall_origin(repo, "post-receive", "0")
+    env["TURBOSIGN_RELEASE_PUSH_TIMEOUT_S"] = "2"
+    r = release(repo, env, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "released v1.3.0" in r.stdout
+    assert "timed out" in r.stderr
+    rel = git(repo["clone"], "rev-parse", "HEAD", env=env)
+    assert origin_main(repo, env) == rel
+    assert "v1.3.0" in origin_tags(repo, env).split()
+    assert git(repo["clone"], "tag", "--list", "v1.3.0", env=env) == "v1.3.0"
+# end def
+
+
+def test_suite_that_moves_head_is_refused(repo, env):
+    base = origin_main(repo, env)
+    r = release(repo, env, "git commit -q --allow-empty -m sneaky; echo '1 passed'")
+    assert r.returncode == 1
+    assert "moved HEAD" in r.stderr
+    assert_untouched(repo, env, base)
+# end def
+
+
+def test_a_version_whose_tag_already_exists_is_refused(repo, env, tmp_path):
+    # v1.3.0 exists on a commit that never reached main.
+    base = origin_main(repo, env)
+    seed = repo["seed"]
+    git(seed, "tag", "-a", "v1.3.0", "-m", "v1.3.0", "HEAD~1", env=env)
+    git(seed, "push", "-q", "origin", "v1.3.0", env=env)
+    fake = tmp_path / "relver"
+    fake.write_text("#!/usr/bin/env bash\necho v1.3.0\n")
+    fake.chmod(0o755)
+    env["JJSTACK_RELEASE_VERSION"] = str(fake)
+    marker = tmp_path / "ran"
+    r = release(repo, env, f"touch {marker}")
+    assert r.returncode == 1
+    assert "tag v1.3.0 already exists" in r.stderr
+    assert not marker.exists()
+    assert git(repo["clone"], "rev-parse", "HEAD", env=env) == base
 # end def
 
 

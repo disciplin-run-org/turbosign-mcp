@@ -7,9 +7,12 @@ What changed, for the person using this — not the person reading git history.
 **A release is now tested at the commit that ships.** Versions are no longer
 bumped by a GitHub Actions bot on every push to `main`; `scripts/release.sh`
 cuts them, and only after the full suite passes at that exact commit. Each
-`vX.Y.Z` tag records which suite ran, its result and when, so you can see what
-any version was tested with. The two workflows (`tests.yml`,
-`version-bump.yml`) are gone. Nothing about how the server behaves changed.
+`vX.Y.Z` tag records which suite ran, its result, when, and on which Python,
+so you can see what any version was tested with. The two workflows
+(`tests.yml`, `version-bump.yml`) are gone. A release is now tested on one
+Python version rather than both 3.10 and 3.12; 3.10 remains the supported
+floor but is not re-tested at each release. Nothing about how the server
+behaves changed.
 
 ## Unreleased
 

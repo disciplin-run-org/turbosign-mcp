@@ -417,7 +417,8 @@ release (breaking = major, `feat` = minor, `fix` = patch; anything else
 releases nothing and runs no suite). It commits `chore(release): vX.Y.Z` with
 `VERSION` and `pyproject.toml`, runs the suite, and only on green pushes that
 commit and an annotated `vX.Y.Z` tag together in one atomic push. The tag
-records the suite command, its totals, the commit and the time:
+records the suite command, its totals, the commit, the time and the Python
+version the suite ran on:
 
 ```bash
 git tag -l --format='%(contents)' v3.1.0
@@ -427,8 +428,17 @@ The full output is kept in `~/.jjstack/releases/turbosign-mcp/`
 (`TURBOSIGN_RELEASE_LOG_DIR` moves it). Interrupting it (Ctrl-C, `TERM`,
 `HUP`) while the suite runs stops the whole suite, deletes any local tag and
 puts `main` back where it was; once tagging starts it can no longer be
-interrupted, so a release is never left half-pushed. `bash scripts/release.sh
---help` lists every option.
+interrupted, so a release is never left half-pushed. The push itself is
+bounded (`TURBOSIGN_RELEASE_PUSH_TIMEOUT_S`, default 300 seconds); after a
+failed or stalled push the script reads `origin` back and either keeps the
+release (origin has it), undoes it (origin has neither), or, if origin cannot
+be read, keeps the local commit and tag and prints the commands to finish by
+hand. `bash scripts/release.sh --help` lists every option.
+
+The suite runs on one interpreter, the operator's: the old workflow's 3.10 and
+3.12 matrix is gone. `requires-python` still says `>=3.10`, which a release
+no longer re-tests, so run `PYTHON=python3.10 bash scripts/suite.sh` before
+releasing anything that might touch 3.10 compatibility.
 
 ## Licence
 

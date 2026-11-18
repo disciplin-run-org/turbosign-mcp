@@ -35,13 +35,18 @@
 #      HEAD or left a changed or untracked file (named), or a remote that
 #      moved: refused.
 #   6. An annotated tag records the run (suite, its last line as the totals,
-#      commit, UTC time), and the commit and the tag go up in one atomic push.
+#      commit, UTC time, and the interpreter when the suite names one), and
+#      the commit and the tag go up in one atomic push, bounded by
+#      TURBOSIGN_RELEASE_PUSH_TIMEOUT_S seconds (default 300).
 #
 # Interruption: INT, TERM or HUP from the release commit until tagging starts
 # stops the suite's whole process group, deletes any local tag, resets main to
 # where it was and restores VERSION and pyproject.toml. From tagging on, the
-# three signals are ignored, so a release is never left half-done: it either
-# pushes both, or a refused push removes the local tag and resets main.
+# three signals are ignored, so a release is never left half-done. A push that
+# fails or passes its limit is followed by a read of the remote: if it holds
+# commit and tag, that is the release; if it holds neither, the local tag is
+# deleted and main reset; if it cannot be read, both are kept and the script
+# prints how to finish by hand.
 #
 # Cite the run with: git tag -l --format='%(contents)' vX.Y.Z
 # The whole suite output is kept in
@@ -205,15 +210,45 @@ if [ "$dry" -eq 1 ]; then
 fi
 
 # 6. The tag, carrying the record; commit and tag pushed atomically. The three
-#    signals are ignored from here (git and its hooks inherit that), so an
-#    interrupt can never leave a tag without its push or a push without its
-#    local record.
+#    signals are ignored from here, so an interrupt can never leave a tag
+#    without its push or a push without its local record. The push runs in
+#    its own session (a terminal's Ctrl-C cannot reach it) and is bounded by
+#    TURBOSIGN_RELEASE_PUSH_TIMEOUT_S (default 300): a stalled push ends, and
+#    origin is then read to see what it holds.
 trap '' INT TERM HUP
 msg="$(printf '%s\n\nsuite: %s\nresult: %s\ncommit: %s\nran: %s\n' \
   "$new" "$suite" "${totals:-<no output>}" "$rel" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+# scripts/suite.sh names its interpreter on a "python: X.Y.Z" line.
+interp="$(grep -m1 -E '^python: [0-9]' "$log" | cut -d' ' -f2-)"
+[ -z "$interp" ] || msg="$(printf '%s\ninterpreter: %s\n' "$msg" "$interp")"
 g tag -a "$new" -m "$msg" "$rel" || refuse "could not create tag $new"
-if ! g push -q --atomic "$remote" "$rel:refs/heads/$branch" "refs/tags/$new"; then
-  refuse "could not push $new to $remote; the local tag and release commit were removed"
+push_limit="${TURBOSIGN_RELEASE_PUSH_TIMEOUT_S:-300}"
+setsid -w timeout -k 10 "$push_limit" \
+  git -C "$dir" push -q --atomic "$remote" "$rel:refs/heads/$branch" "refs/tags/$new"
+push_rc=$?
+if [ "$push_rc" -ne 0 ]; then
+  why="the push failed (exit $push_rc)"
+  [ "$push_rc" -eq 124 ] || [ "$push_rc" -eq 137 ] && why="the push timed out after ${push_limit}s"
+  echo "release.sh: $why; reading $remote to see what it holds" >&2
+  # --atomic: origin holds both refs or neither. ls-remote is bounded too.
+  held="$(setsid -w timeout -k 5 60 git -C "$dir" ls-remote "$remote" \
+            "refs/heads/$branch" "refs/tags/$new")"
+  ls_rc=$?
+  held_main="$(awk -v r="refs/heads/$branch" '$2 == r {print $1}' <<<"$held")"
+  held_tag="$(awk -v r="refs/tags/$new" '$2 == r {print $1}' <<<"$held")"
+  if [ "$ls_rc" -eq 0 ] && [ "$held_main" = "$rel" ] && [ -n "$held_tag" ]; then
+    echo "release.sh: $remote holds $rel and $new: the release went through" >&2
+  elif [ "$ls_rc" -eq 0 ] && [ "$held_main" = "$base" ] && [ -z "$held_tag" ]; then
+    refuse "could not push $new to $remote: $why, and $remote holds neither; the local tag and release commit were removed"
+  else
+    # Origin cannot be read, or holds something else: keep the local record,
+    # never guess. Say how to finish by hand.
+    trap - INT TERM HUP
+    echo "release.sh: refused: $why and $remote could not be read back (ls-remote exit $ls_rc)." >&2
+    echo "  The release commit $rel and tag $new are kept in $dir." >&2
+    echo "  If $remote has $new: nothing to do. If not: git -C $dir reset --soft $base && git -C $dir restore --staged --worktree --source=$base -- VERSION pyproject.toml && git -C $dir tag -d $new" >&2
+    exit 1
+  fi
 fi
 base=""
 trap - INT TERM HUP
